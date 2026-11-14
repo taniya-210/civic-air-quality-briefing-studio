@@ -160,8 +160,19 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           </div>
           <div className="text-[11px] text-slate-400">{activeSummary.primaryUnit}</div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <div className="text-[11px] text-slate-500">Observed Peak</div>
+        <button
+          type="button"
+          onClick={() => {
+            if (activeSummary.observedPeak) {
+              setStationFilter(activeSummary.observedPeak.location);
+              setSearchText(String(activeSummary.observedPeak.rowIndex));
+              document.getElementById('source-readings-table')?.scrollIntoView({ behavior: 'smooth' });
+            }
+          }}
+          className="text-left bg-white border border-slate-200 hover:border-amber-600 rounded-xl p-4 transition-colors focus-visible:outline-2 focus-visible:outline-teal-700"
+          title="Click to trace observed peak to source row"
+        >
+          <div className="text-[11px] text-slate-500">Observed Peak (Traceable)</div>
           <div className="font-mono tabular-nums text-lg font-bold text-amber-800 mt-1">
             {activeSummary.max}
           </div>
@@ -169,15 +180,15 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
             className="text-[11px] text-slate-500 truncate"
             title={
               activeSummary.observedPeak
-                ? `${activeSummary.observedPeak.location} at ${activeSummary.observedPeak.timestampRaw}`
+                ? `${activeSummary.observedPeak.location} at ${activeSummary.observedPeak.timestampRaw} (Row #${activeSummary.observedPeak.rowIndex})`
                 : ''
             }
           >
             {activeSummary.observedPeak
-              ? `${activeSummary.observedPeak.location}`
+              ? `Row #${activeSummary.observedPeak.rowIndex} · ${activeSummary.observedPeak.location}`
               : activeSummary.primaryUnit}
           </div>
-        </div>
+        </button>
         <div className="bg-white border border-slate-200 rounded-xl p-4">
           <div className="text-[11px] text-slate-500">Min / Std Dev</div>
           <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
@@ -429,7 +440,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
       </div>
 
       {/* Traceable Source Readings */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+      <div id="source-readings-table" className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-display text-base font-semibold text-slate-900">
@@ -474,6 +485,20 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
                 className="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-900 w-44"
               />
             </div>
+
+            {(stationFilter !== 'ALL' || topDecileOnly || searchText.trim() !== '') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStationFilter('ALL');
+                  setTopDecileOnly(false);
+                  setSearchText('');
+                }}
+                className="px-2.5 py-1.5 text-xs font-medium text-teal-800 hover:text-teal-950 bg-teal-50 border border-teal-200 rounded-lg whitespace-nowrap"
+              >
+                Reset filters
+              </button>
+            )}
           </div>
         </div>
 

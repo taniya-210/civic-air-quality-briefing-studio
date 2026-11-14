@@ -5,6 +5,8 @@ import {
   Check,
   Copy,
   GraduationCap,
+  HeartPulse,
+  Printer,
   RefreshCw,
   Sparkles,
   Upload,
@@ -15,6 +17,7 @@ import type {
   DashboardView,
   GeneratedBriefingPack,
   ReadingLevel,
+  VulnerableGroupItem,
 } from '../types/airQuality';
 
 interface CitizenAdvisoryViewProps {
@@ -30,6 +33,43 @@ interface CitizenAdvisoryViewProps {
   onNavigate: (view: DashboardView) => void;
 }
 
+const LANG_LABELS: Record<BriefingLanguage, string> = {
+  en: 'English',
+  hi: 'हिन्दी (Hindi)',
+  mr: 'मराठी (Marathi)',
+};
+
+function VulnerableGroupCard({ item }: { item: VulnerableGroupItem }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between space-y-4">
+      <div className="space-y-3">
+        <div>
+          <h4 className="font-display text-base font-bold text-slate-900">{item.groupName}</h4>
+          <p className="text-xs text-slate-600 mt-1 leading-relaxed">{item.riskSummary}</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="text-xs font-semibold text-teal-900">Recommended Precautions</div>
+          <ul className="space-y-1.5 text-xs text-slate-700 leading-relaxed">
+            {item.precautions.map((p, idx) => (
+              <li key={idx}>• {p}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="bg-amber-50/70 border border-amber-200 rounded-lg p-3 space-y-1">
+          <div className="text-[11px] font-semibold text-amber-950">When to Seek Medical Care</div>
+          <p className="text-xs text-amber-900 leading-relaxed">{item.whenToSeekCare}</p>
+        </div>
+      </div>
+
+      <div className="pt-3 border-t border-slate-100 text-[11px] font-mono text-slate-500">
+        Evidence: {item.linkedEvidence}
+      </div>
+    </div>
+  );
+}
+
 export function CitizenAdvisoryView({
   analysis,
   briefingPack,
@@ -42,7 +82,7 @@ export function CitizenAdvisoryView({
   onGenerate,
   onNavigate,
 }: CitizenAdvisoryViewProps) {
-  const [audienceTab, setAudienceTab] = useState<'housing' | 'schools'>('housing');
+  const [audienceTab, setAudienceTab] = useState<'housing' | 'schools' | 'vulnerable'>('housing');
   const [copiedNotice, setCopiedNotice] = useState(false);
 
   if (!analysis) {
@@ -53,7 +93,7 @@ export function CitizenAdvisoryView({
         </div>
         <p className="text-sm text-slate-600 max-w-md mx-auto">
           Upload and validate air-quality measurements first to generate advisories for Housing
-          Societies and Schools.
+          Societies, Schools, and Vulnerable Groups.
         </p>
         <button
           type="button"
@@ -68,66 +108,74 @@ export function CitizenAdvisoryView({
   }
 
   const copyText = async (text: string) => {
-    await navigator.clipboard.writeText(text);
-    setCopiedNotice(true);
-    setTimeout(() => setCopiedNotice(false), 2000);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedNotice(true);
+      setTimeout(() => setCopiedNotice(false), 2000);
+    } catch {
+      // Clipboard API may be blocked in restricted frames
+    }
   };
 
   return (
     <div className="space-y-6">
       {/* Controls */}
       <div className="no-print bg-white border border-slate-200 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
           <button
             type="button"
             onClick={() => setAudienceTab('housing')}
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
               audienceTab === 'housing'
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
-            Housing Societies (RWAs)
+            Housing Societies
           </button>
           <button
             type="button"
             onClick={() => setAudienceTab('schools')}
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
               audienceTab === 'schools'
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <GraduationCap className="w-3.5 h-3.5" />
-            Schools &amp; Students
+            Schools
+          </button>
+          <button
+            type="button"
+            onClick={() => setAudienceTab('vulnerable')}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              audienceTab === 'vulnerable'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <HeartPulse className="w-3.5 h-3.5" />
+            Vulnerable Groups
           </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-            <button
-              type="button"
-              onClick={() => onChangeLanguage('en')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                language === 'en'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              English
-            </button>
-            <button
-              type="button"
-              onClick={() => onChangeLanguage('hi')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                language === 'hi'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              हिन्दी (Hindi)
-            </button>
+            {(['en', 'hi', 'mr'] as BriefingLanguage[]).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => onChangeLanguage(lang)}
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                  language === lang
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {lang === 'en' ? 'English' : lang === 'hi' ? 'हिन्दी' : 'मराठी'}
+              </button>
+            ))}
           </div>
 
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
@@ -179,9 +227,19 @@ export function CitizenAdvisoryView({
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-2.5 text-sm text-red-900">
-          <AlertCircle className="w-4 h-4 text-red-700 mt-0.5 shrink-0" />
-          <div className="text-xs">{error}</div>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-2.5 text-sm text-red-900">
+            <AlertCircle className="w-4 h-4 text-red-700 mt-0.5 shrink-0" />
+            <div className="text-xs leading-relaxed">{error}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onGenerate(language, readingLevel)}
+            disabled={isGenerating || analysis.qualityReport.validRows === 0}
+            className="px-3 py-1.5 text-xs font-medium text-red-900 bg-white border border-red-300 rounded-lg hover:bg-red-100 whitespace-nowrap shrink-0"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -196,11 +254,11 @@ export function CitizenAdvisoryView({
       {!isGenerating && !briefingPack && !error && (
         <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3">
           <div className="font-display text-base font-semibold text-slate-900">
-            Generate Practical Housing Society &amp; School Advisories
+            Generate Practical Housing Society, School &amp; Vulnerable-Group Advisories
           </div>
           <p className="text-sm text-slate-600 max-w-lg mx-auto">
-            Click <strong>Generate Advisories</strong> to produce plain-language English or Hindi
-            guidance grounded strictly in your validated ward telemetry.
+            Click <strong>Generate Advisories</strong> to produce plain-language{' '}
+            {LANG_LABELS[language]} guidance grounded strictly in your validated ward telemetry.
           </p>
         </div>
       )}
@@ -208,9 +266,19 @@ export function CitizenAdvisoryView({
       {!isGenerating && briefingPack && audienceTab === 'housing' && (
         <div className="space-y-6">
           <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-3">
-            <div className="text-xs text-slate-500">
-              Housing Society RWA Advisory · {briefingPack.language === 'hi' ? 'हिन्दी' : 'English'} ·{' '}
-              {briefingPack.readingLevel} level
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-slate-500">
+                Housing Society RWA Advisory · {LANG_LABELS[briefingPack.language]} ·{' '}
+                {briefingPack.readingLevel} level
+              </div>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="no-print inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Print
+              </button>
             </div>
             <h3 className="font-display text-xl font-bold text-slate-900">
               {briefingPack.housingSocietyAdvisory.title}
@@ -223,7 +291,7 @@ export function CitizenAdvisoryView({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-7 bg-white border border-slate-200 rounded-xl p-5 space-y-4">
               <h4 className="font-display text-base font-semibold text-slate-900">
-                Practical Society Actions
+                Practical Society Actions (Recommendations)
               </h4>
               <div className="divide-y divide-slate-100">
                 {briefingPack.housingSocietyAdvisory.practicalActions.map((act, idx) => (
@@ -289,10 +357,19 @@ export function CitizenAdvisoryView({
       {!isGenerating && briefingPack && audienceTab === 'schools' && (
         <div className="space-y-6">
           <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-3">
-            <div className="text-xs text-slate-500">
-              School Health-Conscious Advisory ·{' '}
-              {briefingPack.language === 'hi' ? 'हिन्दी' : 'English'} · {briefingPack.readingLevel}{' '}
-              level
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-slate-500">
+                School Health-Conscious Advisory · {LANG_LABELS[briefingPack.language]} ·{' '}
+                {briefingPack.readingLevel} level
+              </div>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="no-print inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Print
+              </button>
             </div>
             <h3 className="font-display text-xl font-bold text-slate-900">
               {briefingPack.schoolAdvisory.title}
@@ -327,7 +404,7 @@ export function CitizenAdvisoryView({
 
                 <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-2.5">
                   <h4 className="font-display text-sm font-semibold text-slate-900">
-                    Sensitive Students &amp; Health Notes
+                    Students with Asthma / Sensitivity
                   </h4>
                   <ul className="space-y-1.5 text-xs text-slate-700 leading-relaxed">
                     {briefingPack.schoolAdvisory.sensitiveGroupNotes.map((item, i) => (
@@ -381,6 +458,75 @@ export function CitizenAdvisoryView({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {!isGenerating && briefingPack && audienceTab === 'vulnerable' && (
+        <div className="space-y-6">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="text-xs text-slate-500">
+                Targeted Health Precautions · {LANG_LABELS[briefingPack.language]} ·{' '}
+                {briefingPack.readingLevel} level
+              </div>
+              <h3 className="font-display text-xl font-bold text-slate-900">
+                Precautionary Advisories for Vulnerable Groups
+              </h3>
+              <p className="text-xs text-slate-600">
+                Specific protective guidance for children, older adults, and individuals sensitive to
+                air pollution, grounded in {analysis.periodLabel}.
+              </p>
+            </div>
+            <div className="no-print flex items-center gap-2">
+              {briefingPack.vulnerableGroupAdvisories && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const v = briefingPack.vulnerableGroupAdvisories;
+                    const text = [v.children, v.olderAdults, v.sensitiveIndividuals]
+                      .map(
+                        (g) =>
+                          `${g.groupName}\nRisk: ${g.riskSummary}\nPrecautions:\n${g.precautions
+                            .map((p) => `- ${p}`)
+                            .join('\n')}\nSeek Care: ${g.whenToSeekCare}\nEvidence: ${g.linkedEvidence}`
+                      )
+                      .join('\n\n');
+                    void copyText(text);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
+                >
+                  {copiedNotice ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-700" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  {copiedNotice ? 'Copied' : 'Copy Text'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Print
+              </button>
+            </div>
+          </div>
+
+          {briefingPack.vulnerableGroupAdvisories ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <VulnerableGroupCard item={briefingPack.vulnerableGroupAdvisories.children} />
+              <VulnerableGroupCard item={briefingPack.vulnerableGroupAdvisories.olderAdults} />
+              <VulnerableGroupCard
+                item={briefingPack.vulnerableGroupAdvisories.sensitiveIndividuals}
+              />
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-xl p-6 text-sm text-slate-600">
+              Regenerate briefings to populate the vulnerable-group advisory breakdown.
+            </div>
+          )}
         </div>
       )}
     </div>

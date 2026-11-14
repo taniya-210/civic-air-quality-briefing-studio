@@ -96,7 +96,8 @@ async function startServer() {
         return;
       }
 
-      const validLang: BriefingLanguage = language === 'hi' ? 'hi' : 'en';
+      const validLang: BriefingLanguage =
+        language === 'hi' ? 'hi' : language === 'mr' ? 'mr' : 'en';
       const validLevel: ReadingLevel = readingLevel === 'simple' ? 'simple' : 'detailed';
 
       const pack = await generateBriefingsWithGemini(analysis, validLang, validLevel);
@@ -126,7 +127,8 @@ async function startServer() {
         return;
       }
 
-      const validLang: BriefingLanguage = language === 'hi' ? 'hi' : 'en';
+      const validLang: BriefingLanguage =
+        language === 'hi' ? 'hi' : language === 'mr' ? 'mr' : 'en';
       const summary = await generateComparisonBriefingWithGemini(comparison, validLang);
       res.json({ comparisonBriefing: summary });
     } catch (error) {

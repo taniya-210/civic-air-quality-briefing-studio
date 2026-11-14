@@ -39,6 +39,7 @@ export default function App() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [savedPeriods, setSavedPeriods] = useState<SavedPeriodRecord[]>([]);
   const [isSavingPeriod, setIsSavingPeriod] = useState(false);
+  const [periodsError, setPeriodsError] = useState<string | null>(null);
 
   // Briefings keyed by `${analysis.id}|${lang}|${level}` so language/level switches never mix stale outputs
   const [briefingCache, setBriefingCache] = useState<Record<string, GeneratedBriefingPack>>({});
@@ -50,13 +51,17 @@ export default function App() {
   const loadSavedPeriods = useCallback(async () => {
     try {
       const res = await fetch('/api/periods');
-      if (!res.ok) return;
       const data = await res.json();
+      if (!res.ok) {
+        setPeriodsError(data.error || 'Failed to load saved reporting periods.');
+        return;
+      }
+      setPeriodsError(null);
       if (Array.isArray(data.periods)) {
         setSavedPeriods(data.periods);
       }
     } catch {
-      // Non-fatal on initial boot
+      setPeriodsError('Could not reach backend period archive.');
     }
   }, []);
 
@@ -161,11 +166,13 @@ export default function App() {
     const res = await fetch(`/api/periods/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.periods)) {
-        setSavedPeriods(data.periods);
-      }
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to delete saved period.');
+    }
+    setPeriodsError(null);
+    if (Array.isArray(data.periods)) {
+      setSavedPeriods(data.periods);
     }
   };
 
@@ -278,6 +285,7 @@ export default function App() {
               activeAnalysis={analysis}
               savedPeriods={savedPeriods}
               isSaving={isSavingPeriod}
+              periodsError={periodsError}
               onSaveActivePeriod={handleSaveActivePeriod}
               onDeletePeriod={handleDeletePeriod}
             />

@@ -18,6 +18,9 @@ export interface ColumnMapping {
 export interface RawParsedTable {
   headers: string[];
   rows: Record<string, string>[];
+  rowLineNumbers: number[];
+  headerLineNumber: number;
+  skippedPreambleLines: string[];
   detectedDelimiter: string;
   totalRawLines: number;
 }
@@ -225,7 +228,7 @@ export interface AnalysisResult {
   reliabilityNotes: string[];
 }
 
-export type BriefingLanguage = 'en' | 'hi';
+export type BriefingLanguage = 'en' | 'hi' | 'mr';
 export type ReadingLevel = 'simple' | 'detailed';
 
 export interface GroundingAudit {
@@ -278,6 +281,20 @@ export interface SchoolAdvisory {
   caveats: string[];
 }
 
+export interface VulnerableGroupItem {
+  groupName: string;
+  riskSummary: string;
+  precautions: string[];
+  whenToSeekCare: string;
+  linkedEvidence: string;
+}
+
+export interface VulnerableGroupAdvisories {
+  children: VulnerableGroupItem;
+  olderAdults: VulnerableGroupItem;
+  sensitiveIndividuals: VulnerableGroupItem;
+}
+
 export interface GeneratedBriefingPack {
   language: BriefingLanguage;
   readingLevel: ReadingLevel;
@@ -287,6 +304,7 @@ export interface GeneratedBriefingPack {
   wardOfficerBriefing: WardOfficerBriefing;
   housingSocietyAdvisory: HousingSocietyAdvisory;
   schoolAdvisory: SchoolAdvisory;
+  vulnerableGroupAdvisories: VulnerableGroupAdvisories;
 }
 
 export interface SavedPeriodRecord {

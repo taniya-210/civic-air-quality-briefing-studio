@@ -110,12 +110,33 @@ const MAX_PLAUSIBLE_VALUES: Record<string, number> = {
   AQI: 999,
 };
 
+const MISSING_SENTINELS = new Set([
+  '',
+  'na',
+  'n/a',
+  '#n/a',
+  'null',
+  'none',
+  'nan',
+  'nd',
+  'bdl',
+  'missing',
+  '-',
+  '--',
+  '---',
+  '?',
+]);
+
+export function isMissingSentinel(raw: string): boolean {
+  return MISSING_SENTINELS.has(raw.trim().toLowerCase());
+}
+
 export function normalizePollutantName(raw: string): string {
-  const cleaned = raw.trim().toUpperCase().replace(/\s+/g, '');
-  if (cleaned === 'PM25' || cleaned === 'PM2.5' || cleaned === 'PM_2.5' || cleaned === 'PM2,5') {
+  const cleaned = raw.trim().toUpperCase().replace(/[\s_]+/g, '');
+  if (cleaned === 'PM25' || cleaned === 'PM2.5' || cleaned === 'PM2,5') {
     return 'PM2.5';
   }
-  if (cleaned === 'PM10' || cleaned === 'PM_10') return 'PM10';
+  if (cleaned === 'PM10') return 'PM10';
   if (cleaned === 'NO2' || cleaned === 'NITROGENDIOXIDE') return 'NO2';
   if (cleaned === 'SO2' || cleaned === 'SULFURDIOXIDE' || cleaned === 'SULPHURDIOXIDE') return 'SO2';
   if (cleaned === 'O3' || cleaned === 'OZONE') return 'O3';
@@ -134,7 +155,9 @@ export function normalizeUnitString(raw: string): string {
     low === 'ug/m^3' ||
     low === 'µg/m^3' ||
     low === 'mcg/m3' ||
-    low === 'ugm-3'
+    low === 'ugm-3' ||
+    low === 'microgram/m3' ||
+    low === 'micrograms/m3'
   ) {
     return 'µg/m³';
   }
@@ -147,11 +170,47 @@ export function normalizeUnitString(raw: string): string {
   return trimmed;
 }
 
+const MONTH_MAP: Record<string, number> = {
+  jan: 0,
+  feb: 1,
+  mar: 2,
+  apr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  aug: 7,
+  sep: 8,
+  oct: 9,
+  nov: 10,
+  dec: 11,
+};
+
 export function parseTimestampStrict(raw: string): { iso: string; ms: number } | null {
   const trimmed = raw.trim();
-  if (!trimmed) return null;
+  if (!trimmed || isMissingSentinel(trimmed)) return null;
   if (/^\d+$/.test(trimmed)) return null;
 
+  // DD-MMM-YYYY [HH:mm[:ss]] e.g. 08-Nov-2026 06:00
+  const dMonY = trimmed.match(
+    /^(\d{1,2})[-\s/]([A-Za-z]{3})[-\s/](\d{4})(?:[\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+  );
+  if (dMonY) {
+    const day = Number(dMonY[1]);
+    const month = MONTH_MAP[dMonY[2].toLowerCase()];
+    const year = Number(dMonY[3]);
+    const hour = dMonY[4] ? Number(dMonY[4]) : 0;
+    const min = dMonY[5] ? Number(dMonY[5]) : 0;
+    const sec = dMonY[6] ? Number(dMonY[6]) : 0;
+    if (month !== undefined && day >= 1 && day <= 31 && hour <= 23 && min <= 59 && sec <= 59) {
+      const date = new Date(year, month, day, hour, min, sec);
+      if (!Number.isNaN(date.getTime()) && date.getMonth() === month && date.getDate() === day) {
+        return { iso: date.toISOString(), ms: date.getTime() };
+      }
+    }
+    return null;
+  }
+
+  // DD/MM/YYYY [HH:mm[:ss]] or DD-MM-YYYY [HH:mm[:ss]]
   const dmyMatch = trimmed.match(
     /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
@@ -171,9 +230,11 @@ export function parseTimestampStrict(raw: string): { iso: string; ms: number } |
     return null;
   }
 
-  const isoCandidate = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(trimmed)
-    ? trimmed.replace(/\s+/, 'T')
-    : trimmed;
+  // YYYY/MM/DD [HH:mm[:ss]] or YYYY-MM-DD HH:mm[:ss]
+  const ymdSlashNormalized = trimmed.replace(/^(\d{4})\/(\d{2})\/(\d{2})/, '$1-$2-$3');
+  const isoCandidate = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(ymdSlashNormalized)
+    ? ymdSlashNormalized.replace(/\s+/, 'T')
+    : ymdSlashNormalized;
 
   const ms = Date.parse(isoCandidate);
   if (Number.isNaN(ms)) return null;
@@ -223,10 +284,6 @@ function findObservedPeak(readings: ValidatedReading[]): ObservedPeak | null {
   };
 }
 
-/**
- * Evaluates true 24-hour (or 8-hour) regulatory averages per calendar window for a single station.
- * Never compares individual hourly readings against multi-hour regulatory standards.
- */
 function evaluateRegulatoryWindowsForStation(
   stationReadings: ValidatedReading[],
   threshold: PollutantThreshold | null
@@ -252,7 +309,6 @@ function evaluateRegulatoryWindowsForStation(
   const minSamples = threshold.minSamplesPerWindow;
   const minSpan = threshold.minSpanHoursPerWindow;
 
-  // Partition by calendar day (24h) or 8-hour block in local timestamp representation
   const buckets = new Map<string, ValidatedReading[]>();
   for (const r of ordered) {
     const d = new Date(r.timestampMs);
@@ -292,7 +348,6 @@ function evaluateRegulatoryWindowsForStation(
     });
   }
 
-  // Fallback check: if overall dataset spans ~24h (e.g. noon-to-noon continuous 24h log across two calendar dates)
   if (validWindowAverages.length === 0 && ordered.length >= minSamples && spanHours >= minSpan && spanHours <= 30) {
     const avg = ordered.reduce((s, r) => s + r.value, 0) / ordered.length;
     const roundedAvg = roundTo(avg, 2);
@@ -448,7 +503,7 @@ export function validateAndAnalyzeTable(
   const seenKeys = new Map<string, { value: number; unit: string; rowIndex: number }>();
 
   for (let idx = 0; idx < table.rows.length; idx++) {
-    const rowIndex = idx + 2;
+    const rowIndex = table.rowLineNumbers?.[idx] ?? idx + 2;
     const rawRow = table.rows[idx];
     const issues: RowIssue[] = [];
 
@@ -458,29 +513,41 @@ export function validateAndAnalyzeTable(
     const rawValue = (rawRow[mapping.value] ?? '').trim();
     const rawUnit = (rawRow[mapping.unit] ?? '').trim();
 
-    if (!rawPollutant) {
+    const missingPollutant = isMissingSentinel(rawPollutant);
+    const missingLocation = isMissingSentinel(rawLocation);
+    const missingTimestamp = isMissingSentinel(rawTimestamp);
+    const missingValue = isMissingSentinel(rawValue);
+    const missingUnit = isMissingSentinel(rawUnit);
+
+    if (missingPollutant) {
       missingFieldCount++;
       issues.push({ type: 'missing_field', field: 'pollutant', message: 'Missing pollutant name.' });
     }
-    if (!rawLocation) {
+    if (missingLocation) {
       missingFieldCount++;
       issues.push({ type: 'missing_field', field: 'location', message: 'Missing location/station name.' });
     }
-    if (!rawTimestamp) {
+    if (missingTimestamp) {
       missingFieldCount++;
       issues.push({ type: 'missing_field', field: 'timestamp', message: 'Missing timestamp.' });
     }
-    if (!rawValue) {
+    if (missingValue) {
       missingFieldCount++;
-      issues.push({ type: 'missing_field', field: 'value', message: 'Missing numeric measurement value.' });
+      issues.push({
+        type: 'missing_field',
+        field: 'value',
+        message: rawValue
+          ? `Missing reading sentinel ("${rawValue}").`
+          : 'Missing numeric measurement value.',
+      });
     }
-    if (!rawUnit) {
+    if (missingUnit) {
       missingFieldCount++;
       issues.push({ type: 'missing_field', field: 'unit', message: 'Missing measurement unit.' });
     }
 
-    const parsedTs = rawTimestamp ? parseTimestampStrict(rawTimestamp) : null;
-    if (rawTimestamp && !parsedTs) {
+    const parsedTs = !missingTimestamp ? parseTimestampStrict(rawTimestamp) : null;
+    if (!missingTimestamp && !parsedTs) {
       invalidTimestampCount++;
       issues.push({
         type: 'invalid_timestamp',
@@ -490,7 +557,7 @@ export function validateAndAnalyzeTable(
     }
 
     let numericValue = Number.NaN;
-    if (rawValue) {
+    if (!missingValue) {
       const cleanedNum = rawValue.replace(/,/g, '');
       if (!/^[-+]?(\d+(\.\d+)?|\.\d+)$/.test(cleanedNum)) {
         invalidValueCount++;
@@ -519,8 +586,8 @@ export function validateAndAnalyzeTable(
       }
     }
 
-    const pollutant = rawPollutant ? normalizePollutantName(rawPollutant) : '';
-    const normalizedUnit = rawUnit ? normalizeUnitString(rawUnit) : '';
+    const pollutant = !missingPollutant ? normalizePollutantName(rawPollutant) : '';
+    const normalizedUnit = !missingUnit ? normalizeUnitString(rawUnit) : '';
 
     if (Number.isFinite(numericValue) && numericValue >= 0 && pollutant) {
       const maxPlausible = MAX_PLAUSIBLE_VALUES[pollutant];
@@ -538,7 +605,7 @@ export function validateAndAnalyzeTable(
       }
     }
 
-    if (pollutant && rawLocation && parsedTs && Number.isFinite(numericValue) && issues.length === 0) {
+    if (pollutant && !missingLocation && parsedTs && Number.isFinite(numericValue) && issues.length === 0) {
       const key = `${rawLocation.toLowerCase()}|${pollutant}|${parsedTs.ms}`;
       const existing = seenKeys.get(key);
       if (existing) {
@@ -547,14 +614,14 @@ export function validateAndAnalyzeTable(
           issues.push({
             type: 'duplicate_reading',
             field: 'row',
-            message: `Exact duplicate of row #${existing.rowIndex} (${rawLocation}, ${pollutant}, ${rawTimestamp}).`,
+            message: `Exact duplicate of line #${existing.rowIndex} (${rawLocation}, ${pollutant}, ${rawTimestamp}).`,
           });
         } else {
           conflictingDuplicateCount++;
           issues.push({
             type: 'conflicting_duplicate',
             field: 'row',
-            message: `Conflicting duplicate of row #${existing.rowIndex}: earlier value was ${existing.value} ${existing.unit}, found ${numericValue} ${normalizedUnit}.`,
+            message: `Conflicting duplicate of line #${existing.rowIndex}: earlier value was ${existing.value} ${existing.unit}, found ${numericValue} ${normalizedUnit}.`,
           });
         }
       } else {
@@ -924,6 +991,7 @@ export function comparePeriods(
   const pollutantComparisons: PollutantComparisonItem[] = [];
   let comparableCount = 0;
   let nonComparableCount = 0;
+  let hasSampleImbalance = false;
 
   for (const pollutant of allPollutants) {
     const a = sumA.get(pollutant);
@@ -1040,6 +1108,12 @@ export function comparePeriods(
         sharedStations.includes(r.location)
     );
 
+    const minShared = Math.min(sharedReadingsA.length, sharedReadingsB.length);
+    const maxShared = Math.max(sharedReadingsA.length, sharedReadingsB.length);
+    if (maxShared > 0 && minShared / maxShared < 0.35) {
+      hasSampleImbalance = true;
+    }
+
     const matchedMeanA =
       sharedReadingsA.reduce((s, r) => s + r.value, 0) / sharedReadingsA.length;
     const matchedMeanB =
@@ -1119,6 +1193,9 @@ export function comparePeriods(
   }
   if (periodA.analysis.isPreliminary || periodB.analysis.isPreliminary) {
     cautionNotes.push('At least one period uses preliminary intermittent/short-duration sampling; changes reflect observed sample means rather than verified 24-hour regulatory averages.');
+  }
+  if (hasSampleImbalance) {
+    cautionNotes.push('Sample counts differ substantially between the two periods (>3x difference); differences may reflect sampling density rather than true trend.');
   }
   if (nonComparableCount > 0) {
     cautionNotes.push(`${nonComparableCount} pollutant series could not be compared due to missing coverage, unit mismatch, or insufficient samples.`);

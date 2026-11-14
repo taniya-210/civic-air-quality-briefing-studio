@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -21,14 +21,18 @@ interface ComparisonViewProps {
   activeAnalysis: AnalysisResult | null;
   savedPeriods: SavedPeriodRecord[];
   isSaving: boolean;
+  periodsError: string | null;
   onSaveActivePeriod: (label: string) => Promise<SavedPeriodRecord | null>;
   onDeletePeriod: (id: string) => Promise<void>;
 }
+
+const ACTIVE_PERIOD_OPTION_ID = '__ACTIVE_CURRENT_DATASET__';
 
 export function ComparisonView({
   activeAnalysis,
   savedPeriods,
   isSaving,
+  periodsError,
   onSaveActivePeriod,
   onDeletePeriod,
 }: ComparisonViewProps) {
@@ -37,6 +41,7 @@ export function ComparisonView({
   );
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [periodAId, setPeriodAId] = useState<string>('');
   const [periodBId, setPeriodBId] = useState<string>('');
@@ -46,14 +51,44 @@ export function ComparisonView({
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiComparison, setAiComparison] = useState<ComparativeBriefingResponse | null>(null);
 
-  // Sync default selections when savedPeriods updates
-  const resolvedAId =
-    savedPeriods.find((p) => p.id === periodAId)?.id ?? savedPeriods[1]?.id ?? '';
-  const resolvedBId =
-    savedPeriods.find((p) => p.id === periodBId)?.id ?? savedPeriods[0]?.id ?? '';
+  // Sync label input and reset stale comparison state whenever a new dataset is analyzed
+  useEffect(() => {
+    if (activeAnalysis) {
+      setPeriodLabelInput(activeAnalysis.periodLabel);
+      setSaveMessage(null);
+      setSaveError(null);
+      setAiComparison(null);
+    }
+  }, [activeAnalysis?.id, activeAnalysis?.periodLabel]);
 
-  const periodA = savedPeriods.find((p) => p.id === resolvedAId) ?? null;
-  const periodB = savedPeriods.find((p) => p.id === resolvedBId) ?? null;
+  // Build selectable list including Active Unsaved Dataset + Saved Periods
+  const selectablePeriods: SavedPeriodRecord[] = useMemo(() => {
+    const activeAsRecord: SavedPeriodRecord[] =
+      activeAnalysis &&
+      activeAnalysis.qualityReport.validRows > 0 &&
+      !savedPeriods.some((p) => p.id === activeAnalysis.id)
+        ? [
+            {
+              id: ACTIVE_PERIOD_OPTION_ID,
+              periodLabel: `${activeAnalysis.periodLabel} (Active Unsaved)`,
+              datasetName: activeAnalysis.datasetName,
+              savedAtIso: activeAnalysis.analyzedAtIso,
+              analysis: activeAnalysis,
+            },
+          ]
+        : [];
+    return [...activeAsRecord, ...savedPeriods];
+  }, [activeAnalysis, savedPeriods]);
+
+  const resolvedBId =
+    selectablePeriods.find((p) => p.id === periodBId)?.id ?? selectablePeriods[0]?.id ?? '';
+  const resolvedAId =
+    selectablePeriods.find((p) => p.id === periodAId && p.id !== resolvedBId)?.id ??
+    selectablePeriods.find((p) => p.id !== resolvedBId)?.id ??
+    '';
+
+  const periodA = selectablePeriods.find((p) => p.id === resolvedAId) ?? null;
+  const periodB = selectablePeriods.find((p) => p.id === resolvedBId) ?? null;
 
   const comparison = useMemo(() => {
     if (!periodA || !periodB || periodA.id === periodB.id) return null;
@@ -65,13 +100,24 @@ export function ComparisonView({
     setSaveError(null);
     setSaveMessage(null);
     try {
-      const saved = await onSaveActivePeriod(periodLabelInput.trim() || activeAnalysis.periodLabel);
+      const saved = await onSaveActivePeriod(
+        periodLabelInput.trim() || activeAnalysis.periodLabel
+      );
       if (saved) {
         setSaveMessage(`Saved "${saved.periodLabel}" to historical archive.`);
-        if (!periodBId) setPeriodBId(saved.id);
+        setPeriodBId(saved.id);
       }
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save reporting period.');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeleteError(null);
+    try {
+      await onDeletePeriod(id);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete saved period.');
     }
   };
 
@@ -101,16 +147,15 @@ export function ComparisonView({
     <div className="space-y-6">
       {/* Save Active Analysis Box */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="font-display text-base font-semibold text-slate-900">
-              Save Reporting Period to Archive
-            </h2>
-            <p className="text-xs text-slate-500">
-              Persist validated datasets and calculated averages on the backend to compare across
-              weeks or episodes.
-            </p>
-          </div>
+        <div>
+          <h2 className="font-display text-base font-semibold text-slate-900">
+            Save Reporting Period to Archive
+          </h2>
+          <p className="text-xs text-slate-500">
+            Persist validated datasets and calculated averages on the backend to compare across
+            weeks or episodes. You can also compare your active dataset directly against any
+            saved baseline below.
+          </p>
         </div>
 
         {activeAnalysis ? (
@@ -157,11 +202,20 @@ export function ComparisonView({
         <h3 className="font-display text-base font-semibold text-slate-900">
           Saved Reporting Periods ({savedPeriods.length})
         </h3>
+        {periodsError && (
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {periodsError}
+          </div>
+        )}
+        {deleteError && (
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {deleteError}
+          </div>
+        )}
         {savedPeriods.length === 0 ? (
           <p className="text-xs text-slate-500">
             No periods saved yet. Save your active analysis above, then load a second dataset (e.g.
-            the October Baseline CSV in Upload Data) and save it to compare two real reporting
-            periods.
+            the October Baseline CSV in Upload Data) to compare two reporting periods.
           </p>
         ) : (
           <div className="overflow-x-auto border border-slate-200 rounded-lg">
@@ -193,7 +247,7 @@ export function ComparisonView({
                     <td className="px-3 py-2.5 text-right">
                       <button
                         type="button"
-                        onClick={() => onDeletePeriod(rec.id)}
+                        onClick={() => handleDelete(rec.id)}
                         className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-700"
                         title="Delete saved period"
                       >
@@ -210,7 +264,7 @@ export function ComparisonView({
       </div>
 
       {/* Period Selector & Strict Comparison */}
-      {savedPeriods.length >= 2 && (
+      {selectablePeriods.length >= 2 && (
         <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -225,7 +279,7 @@ export function ComparisonView({
                 }}
                 className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900"
               >
-                {savedPeriods.map((p) => (
+                {selectablePeriods.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.periodLabel} ({p.analysis.qualityReport.validRows} rows)
                   </option>
@@ -245,7 +299,7 @@ export function ComparisonView({
                 }}
                 className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900"
               >
-                {savedPeriods.map((p) => (
+                {selectablePeriods.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.periodLabel} ({p.analysis.qualityReport.validRows} rows)
                   </option>
@@ -394,7 +448,8 @@ export function ComparisonView({
                                           }
                                         >
                                           {st.deltaAbs > 0 ? '+' : ''}
-                                          {st.deltaAbs} ({st.deltaPct !== null && st.deltaPct > 0 ? '+' : ''}
+                                          {st.deltaAbs} (
+                                          {st.deltaPct !== null && st.deltaPct > 0 ? '+' : ''}
                                           {st.deltaPct}%)
                                         </span>
                                       ) : (
@@ -427,24 +482,20 @@ export function ComparisonView({
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                      <button
-                        type="button"
-                        onClick={() => setLanguage('en')}
-                        className={`px-2.5 py-1 text-xs font-medium rounded-md ${
-                          language === 'en' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-                        }`}
-                      >
-                        EN
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLanguage('hi')}
-                        className={`px-2.5 py-1 text-xs font-medium rounded-md ${
-                          language === 'hi' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-                        }`}
-                      >
-                        HI
-                      </button>
+                      {(['en', 'hi', 'mr'] as BriefingLanguage[]).map((lang) => (
+                        <button
+                          key={lang}
+                          type="button"
+                          onClick={() => setLanguage(lang)}
+                          className={`px-2.5 py-1 text-xs font-medium rounded-md ${
+                            language === lang
+                              ? 'bg-white text-slate-900 shadow-sm'
+                              : 'text-slate-600'
+                          }`}
+                        >
+                          {lang.toUpperCase()}
+                        </button>
+                      ))}
                     </div>
                     <button
                       type="button"
@@ -463,8 +514,16 @@ export function ComparisonView({
                 </div>
 
                 {aiError && (
-                  <div className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg p-3">
-                    {aiError}
+                  <div className="flex items-start justify-between gap-3 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg p-3">
+                    <span>{aiError}</span>
+                    <button
+                      type="button"
+                      onClick={handleGenerateComparativeAi}
+                      disabled={isGeneratingAi}
+                      className="px-2.5 py-1 text-xs font-medium text-red-900 bg-white border border-red-300 rounded-md hover:bg-red-100 whitespace-nowrap shrink-0"
+                    >
+                      Retry
+                    </button>
                   </div>
                 )}
 
@@ -491,6 +550,16 @@ export function ComparisonView({
                         </ul>
                       </div>
                     </div>
+                    {aiComparison.recommendedNextSteps.length > 0 && (
+                      <div className="text-xs text-slate-800 space-y-1 pt-2 border-t border-slate-200">
+                        <div className="font-semibold text-slate-900">Recommended Next Steps</div>
+                        <ul className="space-y-1 text-slate-700">
+                          {aiComparison.recommendedNextSteps.map((step, i) => (
+                            <li key={i}>• {step}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {aiComparison.uncomparableWarnings.length > 0 && (
                       <div className="text-xs text-amber-900 space-y-1 pt-2 border-t border-slate-200">
                         <div className="font-semibold">Non-Comparable Warnings</div>

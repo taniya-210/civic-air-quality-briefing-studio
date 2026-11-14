@@ -2,6 +2,8 @@ import { useState } from 'react';
 import {
   AlertCircle,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Printer,
   RefreshCw,
@@ -30,6 +32,12 @@ interface BriefingsViewProps {
   onNavigate: (view: DashboardView) => void;
 }
 
+const LANG_LABELS: Record<BriefingLanguage, string> = {
+  en: 'English',
+  hi: 'हिन्दी (Hindi)',
+  mr: 'मराठी (Marathi)',
+};
+
 export function BriefingsView({
   analysis,
   briefingPack,
@@ -43,6 +51,7 @@ export function BriefingsView({
   onNavigate,
 }: BriefingsViewProps) {
   const [copied, setCopied] = useState(false);
+  const [showTraceability, setShowTraceability] = useState(false);
 
   if (!analysis) {
     return (
@@ -68,9 +77,10 @@ export function BriefingsView({
   const handleCopyBriefing = async () => {
     if (!briefingPack) return;
     const b = briefingPack.wardOfficerBriefing;
+    const v = briefingPack.vulnerableGroupAdvisories;
     const text = [
       b.title,
-      `Period: ${analysis.periodLabel} | Language: ${briefingPack.language.toUpperCase()} | Level: ${briefingPack.readingLevel}`,
+      `Period: ${analysis.periodLabel} | Language: ${LANG_LABELS[briefingPack.language]} | Level: ${briefingPack.readingLevel}`,
       '',
       'EXECUTIVE SUMMARY',
       b.executiveSummary,
@@ -91,13 +101,22 @@ export function BriefingsView({
         (r) => `- ${r.action} — ${r.rationale} (Metric: ${r.linkedMetric})`
       ),
       '',
+      'VULNERABLE GROUP OUTREACH',
+      `- ${v.children.groupName}: ${v.children.riskSummary} (${v.children.linkedEvidence})`,
+      `- ${v.olderAdults.groupName}: ${v.olderAdults.riskSummary} (${v.olderAdults.linkedEvidence})`,
+      `- ${v.sensitiveIndividuals.groupName}: ${v.sensitiveIndividuals.riskSummary} (${v.sensitiveIndividuals.linkedEvidence})`,
+      '',
       'DATA LIMITATIONS & CAVEATS',
       ...b.dataCaveats.map((c) => `- ${c}`),
     ].join('\n');
 
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may be blocked in restricted frames
+    }
   };
 
   const zeroValid = analysis.qualityReport.validRows === 0;
@@ -120,28 +139,20 @@ export function BriefingsView({
         <div className="flex flex-wrap items-center gap-3">
           {/* Language selector */}
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-            <button
-              type="button"
-              onClick={() => onChangeLanguage('en')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                language === 'en'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              English
-            </button>
-            <button
-              type="button"
-              onClick={() => onChangeLanguage('hi')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                language === 'hi'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              हिन्दी (Hindi)
-            </button>
+            {(['en', 'hi', 'mr'] as BriefingLanguage[]).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => onChangeLanguage(lang)}
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                  language === lang
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {lang === 'en' ? 'English' : lang === 'hi' ? 'हिन्दी' : 'मराठी'}
+              </button>
+            ))}
           </div>
 
           {/* Reading level selector */}
@@ -185,7 +196,7 @@ export function BriefingsView({
               ? 'Generating Briefings...'
               : briefingPack
               ? 'Regenerate Briefings'
-              : 'Generate Briefings'}
+              : `Generate ${LANG_LABELS[language].split(' ')[0]} (${readingLevel})`}
           </button>
         </div>
       </div>
@@ -236,9 +247,9 @@ export function BriefingsView({
             Ready to Draft Evidence-Grounded Civic Briefings
           </div>
           <p className="text-sm text-slate-600 max-w-lg mx-auto">
-            Select your preferred language ({language === 'hi' ? 'Hindi' : 'English'}) and reading
-            level ({readingLevel}), then click <strong>Generate Briefings</strong>. This creates
-            tailored outputs for Ward Officers, Housing Societies, and Schools in one grounded pass.
+            Select language ({LANG_LABELS[language]}) and reading level ({readingLevel}), then
+            click <strong>Generate</strong>. This produces grounded briefings for Ward Officers,
+            Housing Societies, Schools, and Vulnerable Groups.
           </p>
         </div>
       )}
@@ -250,8 +261,7 @@ export function BriefingsView({
             <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-slate-200">
               <div className="space-y-1">
                 <div className="text-xs text-slate-500">
-                  Ward Officer Internal Briefing ·{' '}
-                  {briefingPack.language === 'hi' ? 'हिन्दी' : 'English'} ·{' '}
+                  Ward Officer Internal Briefing · {LANG_LABELS[briefingPack.language]} ·{' '}
                   {briefingPack.readingLevel === 'simple' ? 'Simple level' : 'Detailed level'} ·
                   Generated {new Date(briefingPack.generatedAtIso).toLocaleTimeString()}
                 </div>
@@ -266,7 +276,11 @@ export function BriefingsView({
                   onClick={handleCopyBriefing}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap shrink-0"
                 >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-700" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
                   {copied ? 'Copied' : 'Copy Text'}
                 </button>
                 <button
@@ -389,6 +403,63 @@ export function BriefingsView({
                 ))}
               </ul>
             </div>
+          </div>
+
+          {/* Traceability Verification Panel */}
+          <div className="no-print bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <button
+              type="button"
+              onClick={() => setShowTraceability((prev) => !prev)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Source Evidence &amp; Grounding Audit
+                </div>
+                <div className="text-xs text-slate-500">
+                  Trace briefing claims directly back to deterministic JS calculations and peak
+                  source rows
+                </div>
+              </div>
+              {showTraceability ? (
+                <ChevronUp className="w-4 h-4 text-slate-500" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-500" />
+              )}
+            </button>
+
+            {showTraceability && (
+              <div className="pt-3 border-t border-slate-200 space-y-3 text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {analysis.pollutantSummaries.map((p) => (
+                    <div key={p.pollutant} className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1">
+                      <div className="font-semibold text-slate-900">
+                        {p.pollutant} ({p.primaryUnit}) · {p.preliminaryLabel}
+                      </div>
+                      <div className="font-mono tabular-nums text-slate-700">
+                        Mean: {p.mean} · Median: {p.median} · P90: {p.p90} · n={p.totalCount}
+                      </div>
+                      {p.observedPeak && (
+                        <div className="font-mono tabular-nums text-amber-900">
+                          Observed Peak: {p.observedPeak.value} {p.observedPeak.unit} at{' '}
+                          {p.observedPeak.location} (Row #{p.observedPeak.rowIndex},{' '}
+                          {p.observedPeak.timestampRaw})
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('analysis')}
+                    className="text-xs font-medium text-teal-800 hover:text-teal-950"
+                  >
+                    Open Full Source Readings Table →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

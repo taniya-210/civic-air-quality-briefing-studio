@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import type {
   AnalysisResult,
   BriefingLanguage,
@@ -29,6 +29,16 @@ function getGeminiClient(): GoogleGenAI {
       },
     },
   });
+}
+
+function getLanguageInstruction(language: BriefingLanguage): string {
+  if (language === 'hi') {
+    return 'Write ALL human-readable prose, headings, notices, and recommendations in clear, natural Hindi (Devanagari script). Keep pollutant chemical formulas (PM2.5, PM10, NO2, SO2, O3, CO) and station names recognizable.';
+  }
+  if (language === 'mr') {
+    return 'Write ALL human-readable prose, headings, notices, and recommendations in clear, natural Marathi (Devanagari script). Keep pollutant chemical formulas (PM2.5, PM10, NO2, SO2, O3, CO) and station names recognizable.';
+  }
+  return 'Write ALL prose, headings, notices, and recommendations in crisp, plain, authoritative English.';
 }
 
 function buildCompactEvidencePayload(analysis: AnalysisResult) {
@@ -80,7 +90,6 @@ function buildCompactEvidencePayload(analysis: AnalysisResult) {
       isPreliminary: p.isPreliminary,
       preliminaryLabel: p.preliminaryLabel,
       averagingNote: p.averagingNote,
-      // Only include regulatory standard and exceedance counts when valid 24h/8h windows exist
       ...(p.regulatoryWindowTotalCount > 0 && p.thresholdUsed
         ? {
             regulatoryAssessment: {
@@ -114,6 +123,7 @@ function buildCompactEvidencePayload(analysis: AnalysisResult) {
         location: h.location,
         observedMean: h.mean,
         observedPeak: h.max,
+        observedPeakRow: h.observedPeakRowIndex,
         observedPeakTimestamp: h.observedPeakTimestamp,
         sampleCount: h.count,
         pctVsWardMean: h.pctAboveWardMean,
@@ -155,6 +165,14 @@ export function mapGeminiError(error: unknown): { statusCode: number; code: stri
       message: `Gemini model "${MODEL_NAME}" returned not found. Please retry or check service status.`,
     };
   }
+  if (status === 503 || rawMsg.includes('UNAVAILABLE') || rawMsg.toLowerCase().includes('high demand')) {
+    return {
+      statusCode: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      message:
+        'Gemini AI service is temporarily experiencing high demand. Your validated analysis is intact—please wait a few seconds and click Retry.',
+    };
+  }
 
   return {
     statusCode: status >= 400 && status < 600 ? status : 500,
@@ -162,6 +180,41 @@ export function mapGeminiError(error: unknown): { statusCode: number; code: stri
     message: rawMsg,
   };
 }
+
+function isTransientCapacityError(error: unknown): boolean {
+  const errObj = error as { status?: number; statusCode?: number; message?: string };
+  const status = errObj?.statusCode || errObj?.status;
+  const msg = (errObj?.message || '').toLowerCase();
+  return status === 503 || msg.includes('unavailable') || msg.includes('high demand');
+}
+
+async function withTransientRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt >= maxRetries || !isTransientCapacityError(error)) {
+        throw error;
+      }
+      const delayMs = 800 * Math.pow(2, attempt);
+      attempt++;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
+const vulnerableGroupItemSchema = {
+  type: Type.OBJECT,
+  required: ['groupName', 'riskSummary', 'precautions', 'whenToSeekCare', 'linkedEvidence'],
+  properties: {
+    groupName: { type: Type.STRING },
+    riskSummary: { type: Type.STRING },
+    precautions: { type: Type.ARRAY, items: { type: Type.STRING } },
+    whenToSeekCare: { type: Type.STRING },
+    linkedEvidence: { type: Type.STRING },
+  },
+};
 
 export async function generateBriefingsWithGemini(
   analysis: AnalysisResult,
@@ -171,10 +224,7 @@ export async function generateBriefingsWithGemini(
   const ai = getGeminiClient();
   const evidence = buildCompactEvidencePayload(analysis);
 
-  const langInstruction =
-    language === 'hi'
-      ? 'Write ALL human-readable prose, headings, notices, and recommendations in clear, natural Hindi (Devanagari script). Keep pollutant chemical formulas (PM2.5, PM10, NO2, SO2, O3, CO) and station names recognizable.'
-      : 'Write ALL prose, headings, notices, and recommendations in crisp, plain, authoritative English.';
+  const langInstruction = getLanguageInstruction(language);
 
   const levelInstruction =
     readingLevel === 'simple'
@@ -184,29 +234,33 @@ export async function generateBriefingsWithGemini(
   const systemInstruction = [
     'You are an analytical assistant for the Civic Air Quality Briefing Studio.',
     'STRICT SCIENTIFIC ACCURACY & GROUNDING RULES:',
-    '1. Every numeric measurement, station name, pollutant name, and time span you cite MUST come verbatim from the provided JSON evidence payload.',
+    '1. Every numeric measurement, station name, pollutant name, row number, and time span you cite MUST come verbatim from the provided JSON evidence payload.',
     '2. NEVER compare individual hourly or spot readings directly against a 24-hour or 8-hour regulatory standard (such as CPCB 24h PM2.5 = 60 ug/m3).',
     '3. ONLY report a regulatory standard exceedance when "regulatoryAssessment" is non-null for that pollutant and "exceedingWindowCount" > 0 (meaning a valid 24-hour or 8-hour window average was calculated from sufficient hourly readings).',
     '4. When "isPreliminary" is true (or "regulatoryAssessment" is null), explicitly label findings as PRELIMINARY, report the observed mean and observed peak (maximum observed reading) without calling it a regulatory exceedance, and state why 24-hour regulatory exceedance determination is not supported.',
     '5. Keep measured facts (measuredFacts), AI interpretations (aiInterpretations), and recommendations (recommendations / practicalActions) strictly separate. Never present analytical hypotheses as measured facts.',
-    '6. If overallReliability is "insufficient" or "caution", or if any trend direction is "insufficient_data", highlight those caveats prominently in dataCaveats/caveats.',
+    '6. Include specific, practical precautionary advisories in vulnerableGroupAdvisories for (a) children, (b) older adults, and (c) people sensitive to poor air quality (asthma, COPD, heart disease, outdoor workers), each linked to exact observed concentrations/stations in the payload.',
+    '7. If overallReliability is "insufficient" or "caution", or if any trend direction is "insufficient_data", highlight those caveats prominently in dataCaveats/caveats.',
     langInstruction,
     levelInstruction,
   ].join('\n');
 
-  const response = await ai.models.generateContent({
-    model: MODEL_NAME,
-    contents: `Analyze this validated air-quality monitoring summary and produce tailored briefings for Ward Officers, Housing Societies, and Schools.\n\nVALIDATED EVIDENCE PAYLOAD:\n${JSON.stringify(evidence, null, 2)}`,
-    config: {
-      systemInstruction,
-      responseMimeType: 'application/json',
-      responseSchema: {
+  const response = await withTransientRetry(() =>
+    ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: `Analyze this validated air-quality monitoring summary and produce tailored briefings for Ward Officers, Housing Societies, Schools, and Vulnerable Groups (children, older adults, sensitive individuals).\n\nVALIDATED EVIDENCE PAYLOAD:\n${JSON.stringify(evidence, null, 2)}`,
+      config: {
+        systemInstruction,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+        responseMimeType: 'application/json',
+        responseSchema: {
         type: Type.OBJECT,
         required: [
           'groundingAudit',
           'wardOfficerBriefing',
           'housingSocietyAdvisory',
           'schoolAdvisory',
+          'vulnerableGroupAdvisories',
         ],
         properties: {
           groundingAudit: {
@@ -319,10 +373,19 @@ export async function generateBriefingsWithGemini(
               caveats: { type: Type.ARRAY, items: { type: Type.STRING } },
             },
           },
+          vulnerableGroupAdvisories: {
+            type: Type.OBJECT,
+            required: ['children', 'olderAdults', 'sensitiveIndividuals'],
+            properties: {
+              children: vulnerableGroupItemSchema,
+              olderAdults: vulnerableGroupItemSchema,
+              sensitiveIndividuals: vulnerableGroupItemSchema,
+            },
+          },
         },
       },
     },
-  });
+  }));
 
   const rawJson = (response.text ?? '').trim();
   if (!rawJson) {
@@ -345,6 +408,7 @@ export async function generateBriefingsWithGemini(
     wardOfficerBriefing: parsed.wardOfficerBriefing,
     housingSocietyAdvisory: parsed.housingSocietyAdvisory,
     schoolAdvisory: parsed.schoolAdvisory,
+    vulnerableGroupAdvisories: parsed.vulnerableGroupAdvisories,
   };
 }
 
@@ -354,10 +418,7 @@ export async function generateComparisonBriefingWithGemini(
 ): Promise<ComparativeBriefingResponse> {
   const ai = getGeminiClient();
 
-  const langInstruction =
-    language === 'hi'
-      ? 'Respond entirely in clear, natural Hindi (Devanagari script), keeping chemical pollutant names (PM2.5, PM10, NO2) and station names recognizable.'
-      : 'Respond in clear, factual English.';
+  const langInstruction = getLanguageInstruction(language);
 
   const systemInstruction = [
     'You are analyzing a verified comparison between two air-quality reporting periods.',
@@ -369,31 +430,34 @@ export async function generateComparisonBriefingWithGemini(
     langInstruction,
   ].join('\n');
 
-  const response = await ai.models.generateContent({
-    model: MODEL_NAME,
-    contents: `Summarize this period-over-period air quality comparison:\n${JSON.stringify(comparison, null, 2)}`,
-    config: {
-      systemInstruction,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        required: [
-          'headline',
-          'verifiedChanges',
-          'aiInterpretation',
-          'uncomparableWarnings',
-          'recommendedNextSteps',
-        ],
-        properties: {
-          headline: { type: Type.STRING },
-          verifiedChanges: { type: Type.ARRAY, items: { type: Type.STRING } },
-          aiInterpretation: { type: Type.ARRAY, items: { type: Type.STRING } },
-          uncomparableWarnings: { type: Type.ARRAY, items: { type: Type.STRING } },
-          recommendedNextSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
+  const response = await withTransientRetry(() =>
+    ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: `Summarize this period-over-period air quality comparison:\n${JSON.stringify(comparison, null, 2)}`,
+      config: {
+        systemInstruction,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          required: [
+            'headline',
+            'verifiedChanges',
+            'aiInterpretation',
+            'uncomparableWarnings',
+            'recommendedNextSteps',
+          ],
+          properties: {
+            headline: { type: Type.STRING },
+            verifiedChanges: { type: Type.ARRAY, items: { type: Type.STRING } },
+            aiInterpretation: { type: Type.ARRAY, items: { type: Type.STRING } },
+            uncomparableWarnings: { type: Type.ARRAY, items: { type: Type.STRING } },
+            recommendedNextSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
         },
       },
-    },
-  });
+    })
+  );
 
   const rawJson = (response.text ?? '').trim();
   if (!rawJson) {

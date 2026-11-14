@@ -307,6 +307,14 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
                 <span className="font-mono text-xs text-slate-600">
                   {parsedTable.headers.length} columns ({parsedTable.detectedDelimiter} delimited)
                 </span>
+                {parsedTable.skippedPreambleLines.length > 0 && (
+                  <>
+                    <span className="text-slate-400">·</span>
+                    <span className="text-xs text-teal-800">
+                      Skipped {parsedTable.skippedPreambleLines.length} preamble line(s)
+                    </span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-slate-500">
                 Verify detected column mappings below before running validation and statistical
@@ -359,7 +367,7 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                    <th className="px-3 py-2 font-mono font-medium">Row</th>
+                    <th className="px-3 py-2 font-mono font-medium">Line</th>
                     {parsedTable.headers.map((header) => (
                       <th key={header} className="px-3 py-2 font-mono font-medium whitespace-nowrap">
                         {header}
@@ -371,7 +379,7 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
                   {parsedTable.rows.slice(0, 6).map((row, idx) => (
                     <tr key={idx} className="hover:bg-slate-50/70">
                       <td className="px-3 py-2 font-mono tabular-nums text-slate-400">
-                        #{idx + 2}
+                        #{parsedTable.rowLineNumbers?.[idx] ?? idx + 2}
                       </td>
                       {parsedTable.headers.map((header) => (
                         <td

@@ -71,8 +71,9 @@ export function OverviewView({
             <div className="space-y-1">
               <div className="font-semibold text-slate-900">3. Grounded Gemini Briefings</div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Generates English or Hindi advisories tailored for ward officers, RWAs, and schools
-                while separating measured facts from AI interpretation.
+                Generates English, Hindi, or Marathi advisories tailored for ward officers, RWAs,
+                schools, and vulnerable groups while separating measured facts from AI
+                interpretation.
               </p>
             </div>
           </div>
