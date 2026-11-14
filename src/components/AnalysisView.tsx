@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Info,
   Minus,
   Search,
@@ -17,11 +19,14 @@ interface AnalysisViewProps {
   onNavigate: (view: DashboardView) => void;
 }
 
+const READINGS_PER_PAGE = 100;
+
 export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
   const [selectedPollutant, setSelectedPollutant] = useState<string>('');
   const [stationFilter, setStationFilter] = useState<string>('ALL');
   const [topDecileOnly, setTopDecileOnly] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [page, setPage] = useState(1);
 
   const activeSummary = useMemo(() => {
     if (!analysis || analysis.pollutantSummaries.length === 0) return null;
@@ -49,6 +54,10 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
     });
   }, [analysis, activeSummary, stationFilter, topDecileOnly, searchText]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [stationFilter, topDecileOnly, searchText, selectedPollutant, analysis?.id]);
+
   if (!analysis || !activeSummary) {
     return (
       <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3">
@@ -73,23 +82,33 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
 
   const trend = activeSummary.trend;
   const hasValidRegulatoryWindows = activeSummary.regulatoryWindowTotalCount > 0;
+  const totalPages = Math.max(1, Math.ceil(traceableReadings.length / READINGS_PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const startIdx = (safePage - 1) * READINGS_PER_PAGE;
+  const pagedReadings = traceableReadings.slice(startIdx, startIdx + READINGS_PER_PAGE);
 
   return (
     <div className="space-y-6">
       {/* Pollutant Switcher */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-200/70 rounded-lg">
+        <div
+          role="tablist"
+          aria-label="Analyzed pollutants"
+          className="flex flex-wrap items-center gap-1 p-1 bg-slate-200/70 rounded-lg"
+        >
           {analysis.pollutantSummaries.map((summary) => {
             const isActive = summary.pollutant === activeSummary.pollutant;
             return (
               <button
                 key={summary.pollutant}
                 type="button"
+                role="tab"
+                aria-selected={isActive}
                 onClick={() => {
                   setSelectedPollutant(summary.pollutant);
                   setStationFilter('ALL');
                 }}
-                className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-teal-700 ${
                   isActive
                     ? 'bg-white text-slate-900 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
@@ -144,21 +163,21 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
             {activeSummary.mean}
           </div>
-          <div className="text-[11px] text-slate-400">{activeSummary.primaryUnit}</div>
+          <div className="text-[11px] text-slate-500">{activeSummary.primaryUnit}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4">
           <div className="text-[11px] text-slate-500">Median</div>
           <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
             {activeSummary.median}
           </div>
-          <div className="text-[11px] text-slate-400">{activeSummary.primaryUnit}</div>
+          <div className="text-[11px] text-slate-500">{activeSummary.primaryUnit}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4">
           <div className="text-[11px] text-slate-500">90th Pct</div>
           <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
             {activeSummary.p90}
           </div>
-          <div className="text-[11px] text-slate-400">{activeSummary.primaryUnit}</div>
+          <div className="text-[11px] text-slate-500">{activeSummary.primaryUnit}</div>
         </div>
         <button
           type="button"
@@ -194,7 +213,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
             {activeSummary.min} / {activeSummary.stdDev}
           </div>
-          <div className="text-[11px] text-slate-400">n={activeSummary.totalCount}</div>
+          <div className="text-[11px] text-slate-500">n={activeSummary.totalCount}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4">
           <div className="text-[11px] text-slate-500">
@@ -379,15 +398,21 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
               {activeSummary.locationStats.map((st) => (
                 <tr
                   key={st.location}
-                  onClick={() =>
-                    setStationFilter((prev) => (prev === st.location ? 'ALL' : st.location))
-                  }
-                  className={`cursor-pointer transition-colors ${
+                  className={`transition-colors ${
                     stationFilter === st.location ? 'bg-teal-50/70' : 'hover:bg-slate-50'
                   }`}
                 >
                   <td className="px-3 py-2.5 font-medium text-slate-900">
-                    {st.location}
+                    <button
+                      type="button"
+                      aria-pressed={stationFilter === st.location}
+                      onClick={() =>
+                        setStationFilter((prev) => (prev === st.location ? 'ALL' : st.location))
+                      }
+                      className="text-left hover:text-teal-800 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-teal-700 rounded"
+                    >
+                      {st.location}
+                    </button>
                     {st.isLowSample && (
                       <span className="ml-2 text-[11px] text-amber-700 font-normal">
                         (Low sample)
@@ -452,18 +477,24 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <select
-              value={stationFilter}
-              onChange={(e) => setStationFilter(e.target.value)}
-              className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800"
-            >
-              <option value="ALL">All Stations</option>
-              {activeSummary.locationStats.map((s) => (
-                <option key={s.location} value={s.location}>
-                  {s.location}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label htmlFor="analysis-station-filter" className="sr-only">
+                Filter source readings by monitoring station
+              </label>
+              <select
+                id="analysis-station-filter"
+                value={stationFilter}
+                onChange={(e) => setStationFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:border-teal-700"
+              >
+                <option value="ALL">All Stations</option>
+                {activeSummary.locationStats.map((s) => (
+                  <option key={s.location} value={s.location}>
+                    {s.location}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <label className="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
               <input
@@ -476,13 +507,20 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
             </label>
 
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <label htmlFor="analysis-search-input" className="sr-only">
+                Search source readings by row number, station, or timestamp
+              </label>
+              <Search
+                className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2"
+                aria-hidden="true"
+              />
               <input
+                id="analysis-search-input"
                 type="text"
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 placeholder="Search row # or time..."
-                className="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-900 w-44"
+                className="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-900 w-44 focus:outline-none focus:border-teal-700"
               />
             </div>
 
@@ -494,7 +532,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
                   setTopDecileOnly(false);
                   setSearchText('');
                 }}
-                className="px-2.5 py-1.5 text-xs font-medium text-teal-800 hover:text-teal-950 bg-teal-50 border border-teal-200 rounded-lg whitespace-nowrap"
+                className="px-2.5 py-1.5 text-xs font-medium text-teal-800 hover:text-teal-950 bg-teal-50 border border-teal-200 rounded-lg whitespace-nowrap focus-visible:outline-2 focus-visible:outline-teal-700"
               >
                 Reset filters
               </button>
@@ -506,16 +544,16 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           <table className="w-full text-left border-collapse text-xs">
             <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600">
               <tr>
-                <th className="px-3 py-2 font-mono font-medium">Row #</th>
-                <th className="px-3 py-2 font-medium">Location</th>
-                <th className="px-3 py-2 font-mono font-medium">Timestamp</th>
-                <th className="px-3 py-2 font-mono font-medium text-right">Measured Value</th>
-                <th className="px-3 py-2 font-mono font-medium">Unit</th>
-                <th className="px-3 py-2 font-medium">Status</th>
+                <th scope="col" className="px-3 py-2 font-mono font-medium">Row #</th>
+                <th scope="col" className="px-3 py-2 font-medium">Location</th>
+                <th scope="col" className="px-3 py-2 font-mono font-medium">Timestamp</th>
+                <th scope="col" className="px-3 py-2 font-mono font-medium text-right">Measured Value</th>
+                <th scope="col" className="px-3 py-2 font-mono font-medium">Unit</th>
+                <th scope="col" className="px-3 py-2 font-medium">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {traceableReadings.map((r) => {
+              {pagedReadings.map((r) => {
                 const isPeak = activeSummary.observedPeak?.rowIndex === r.rowIndex;
                 return (
                   <tr key={r.rowIndex} className="hover:bg-slate-50/70">
@@ -545,6 +583,38 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
             </tbody>
           </table>
         </div>
+
+        {traceableReadings.length > READINGS_PER_PAGE && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-slate-600">
+            <span className="font-mono tabular-nums">
+              Showing {startIdx + 1}–{Math.min(startIdx + READINGS_PER_PAGE, traceableReadings.length)} of{' '}
+              {traceableReadings.length} rows
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1 border border-slate-300 rounded-md bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-teal-700"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                Prev
+              </button>
+              <span className="font-mono tabular-nums px-2">
+                Page {safePage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1 border border-slate-300 rounded-md bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-teal-700"
+              >
+                Next
+                <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

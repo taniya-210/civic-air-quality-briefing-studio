@@ -27,6 +27,43 @@ interface TimeSeriesChartProps {
   observedPeak: ObservedPeak | null;
 }
 
+function decimateSeriesPoints(
+  points: ValidatedReading[],
+  peakRowIndex: number | null,
+  maxPoints = 220
+): ValidatedReading[] {
+  if (points.length <= maxPoints) return points;
+  const bucketCount = Math.floor(maxPoints / 2);
+  const bucketSize = points.length / bucketCount;
+  const result: ValidatedReading[] = [];
+  const added = new Set<number>();
+
+  for (let b = 0; b < bucketCount; b++) {
+    const start = Math.floor(b * bucketSize);
+    const end = Math.min(points.length, Math.floor((b + 1) * bucketSize));
+    if (start >= end) continue;
+    let minPt = points[start];
+    let maxPt = points[start];
+    let peakPt: ValidatedReading | null = null;
+    for (let i = start; i < end; i++) {
+      const p = points[i];
+      if (p.value < minPt.value) minPt = p;
+      if (p.value > maxPt.value) maxPt = p;
+      if (peakRowIndex !== null && p.rowIndex === peakRowIndex) peakPt = p;
+    }
+    const candidates = minPt.timestampMs <= maxPt.timestampMs ? [minPt, maxPt] : [maxPt, minPt];
+    if (peakPt) candidates.push(peakPt);
+    candidates.sort((a, bPt) => a.timestampMs - bPt.timestampMs);
+    for (const c of candidates) {
+      if (!added.has(c.rowIndex)) {
+        added.add(c.rowIndex);
+        result.push(c);
+      }
+    }
+  }
+  return result;
+}
+
 export function TimeSeriesChart({
   readings,
   pollutant,
@@ -41,19 +78,30 @@ export function TimeSeriesChart({
       .filter((r) => r.pollutant === pollutant && r.normalizedUnit === unit)
       .sort((a, b) => a.timestampMs - b.timestampMs);
 
-    const stations = Array.from(new Set(filtered.map((r) => r.location))).sort();
+    const byStationMap = new Map<string, ValidatedReading[]>();
+    for (const r of filtered) {
+      let arr = byStationMap.get(r.location);
+      if (!arr) {
+        arr = [];
+        byStationMap.set(r.location, arr);
+      }
+      arr.push(r);
+    }
+
+    const stations = Array.from(byStationMap.keys()).sort();
+    const peakRow = observedPeak?.rowIndex ?? null;
     const byStation = stations.map((station, idx) => ({
       station,
       color: STATION_COLORS[idx % STATION_COLORS.length],
-      points: filtered.filter((r) => r.location === station),
+      points: decimateSeriesPoints(byStationMap.get(station)!, peakRow),
     }));
 
     return { filtered, stations, byStation };
-  }, [readings, pollutant, unit]);
+  }, [readings, pollutant, unit, observedPeak?.rowIndex]);
 
   if (seriesData.filtered.length === 0) {
     return (
-      <div className="py-12 text-center text-sm text-slate-500">
+      <div className="py-12 text-center text-sm text-slate-600">
         No compatible {pollutant} ({unit}) readings to plot.
       </div>
     );
@@ -72,7 +120,12 @@ export function TimeSeriesChart({
   const maxMs = seriesData.filtered[seriesData.filtered.length - 1].timestampMs;
   const msSpan = Math.max(maxMs - minMs, 3600000);
 
-  const maxDataVal = Math.max(...seriesData.filtered.map((r) => r.value));
+  let maxDataVal = 0;
+  for (let i = 0; i < seriesData.filtered.length; i++) {
+    if (seriesData.filtered[i].value > maxDataVal) {
+      maxDataVal = seriesData.filtered[i].value;
+    }
+  }
   const maxY = Math.max(maxDataVal * 1.14, 10);
 
   const getX = (ms: number) =>
@@ -134,7 +187,7 @@ export function TimeSeriesChart({
               </strong>
             </span>
           ) : (
-            <span className="text-slate-400">Hover any point to inspect source reading</span>
+            <span className="text-slate-500">Hover any point to inspect source reading</span>
           )}
         </div>
       </div>
@@ -279,7 +332,7 @@ export function HotspotBarChart({
             <div key={item.location} className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-2 text-xs">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono tabular-nums text-slate-400">#{item.rank}</span>
+                  <span className="font-mono tabular-nums text-slate-500">#{item.rank}</span>
                   <span className="font-medium text-slate-900 truncate">{item.location}</span>
                   <span className="text-slate-500 font-mono tabular-nums shrink-0">
                     n={item.count}

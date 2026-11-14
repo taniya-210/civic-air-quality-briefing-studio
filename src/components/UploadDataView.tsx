@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Play, Trash2, Upload } from 'lucide-react';
 import { inferColumnMapping, parseTabularText } from '../lib/csvParser';
 import { SAMPLE_DATASETS, type SampleDatasetSpec } from '../lib/sampleDatasets';
@@ -35,6 +35,7 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
   });
   const [parseError, setParseError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const pasteDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runParsePreview = (text: string, name?: string) => {
     setParseError(null);
@@ -52,6 +53,12 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
       setParseError(err instanceof Error ? err.message : 'Unable to parse tabular data.');
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (pasteDebounceRef.current) clearTimeout(pasteDebounceRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (initialSampleId) {
@@ -72,6 +79,10 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
   const handleFile = async (file: File) => {
     setParseError(null);
     const maxBytes = 5 * 1024 * 1024;
+    if (file.size === 0) {
+      setParseError('Selected file is empty (0 bytes).');
+      return;
+    }
     if (file.size > maxBytes) {
       setParseError('File exceeds 5 MB limit. Please upload a smaller CSV or TSV export.');
       return;
@@ -87,6 +98,10 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
     }
     try {
       const text = await file.text();
+      if (text.includes('\u0000')) {
+        setParseError('File appears to contain binary data. Upload plain UTF-8 CSV or TSV text.');
+        return;
+      }
       setRawText(text);
       setDatasetName(file.name);
       const cleanBase = file.name.replace(/\.(csv|tsv|txt)$/i, '').replace(/[_-]+/g, ' ');
@@ -195,21 +210,22 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
             }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
-            className={`flex flex-col items-center justify-center border border-dashed rounded-lg px-6 py-10 cursor-pointer transition-colors ${
+            className={`flex flex-col items-center justify-center border border-dashed rounded-lg px-6 py-10 cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-teal-700 ${
               isDragging
                 ? 'border-teal-700 bg-teal-50/50'
                 : 'border-slate-300 bg-slate-50/60 hover:bg-slate-100/70'
             }`}
           >
-            <Upload className="w-6 h-6 text-slate-500 mb-2.5" />
+            <Upload aria-hidden="true" className="w-6 h-6 text-slate-600 mb-2.5" />
             <span className="text-sm font-medium text-slate-900">
               Choose CSV file or drag here
             </span>
-            <span className="text-xs text-slate-500 mt-1">
+            <span className="text-xs text-slate-600 mt-1">
               Required fields: pollutant, location, timestamp, value, unit
             </span>
             <input
               type="file"
+              aria-label="Upload air quality CSV or TSV file"
               accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
               onChange={handleFileChange}
               className="sr-only"
@@ -275,11 +291,17 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
           </div>
 
           <textarea
+            aria-label="Paste tabular air quality monitoring data"
             value={rawText}
             onChange={(e) => {
               const val = e.target.value;
               setRawText(val);
-              runParsePreview(val);
+              if (pasteDebounceRef.current) clearTimeout(pasteDebounceRef.current);
+              if (val.length > 20000) {
+                pasteDebounceRef.current = setTimeout(() => runParsePreview(val), 200);
+              } else {
+                runParsePreview(val);
+              }
             }}
             rows={11}
             placeholder={`location,timestamp,pollutant,value,unit\nSchool Gate Ward 14,2026-11-08 08:00,PM2.5,112,ug/m3\nRing Road Junction,2026-11-08 08:00,PM2.5,168,ug/m3`}
@@ -289,8 +311,11 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
       </div>
 
       {parseError && (
-        <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-900">
-          <AlertCircle className="w-4 h-4 text-red-700 mt-0.5 shrink-0" />
+        <div
+          role="alert"
+          className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-900"
+        >
+          <AlertCircle aria-hidden="true" className="w-4 h-4 text-red-700 mt-0.5 shrink-0" />
           <span>{parseError}</span>
         </div>
       )}
@@ -303,13 +328,13 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <CheckCircle2 className="w-4 h-4 text-emerald-700" />
                 <span>Parsed {parsedTable.rows.length} rows</span>
-                <span className="text-slate-400">·</span>
+                <span className="text-slate-500" aria-hidden="true">·</span>
                 <span className="font-mono text-xs text-slate-600">
                   {parsedTable.headers.length} columns ({parsedTable.detectedDelimiter} delimited)
                 </span>
                 {parsedTable.skippedPreambleLines.length > 0 && (
                   <>
-                    <span className="text-slate-400">·</span>
+                    <span className="text-slate-500" aria-hidden="true">·</span>
                     <span className="text-xs text-teal-800">
                       Skipped {parsedTable.skippedPreambleLines.length} preamble line(s)
                     </span>
@@ -326,9 +351,9 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
               type="button"
               onClick={handleConfirmAnalyze}
               disabled={!allMapped}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-teal-800 rounded-lg hover:bg-teal-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-teal-800 rounded-lg hover:bg-teal-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-teal-700"
             >
-              <Play className="w-4 h-4" />
+              <Play aria-hidden="true" className="w-4 h-4" />
               Validate &amp; Analyze Dataset
             </button>
           </div>
@@ -336,10 +361,14 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             {REQUIRED_FIELDS.map((field) => (
               <div key={field.key}>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor={`map-${field.key}`}
+                  className="block text-xs font-medium text-slate-700 mb-1"
+                >
                   {field.label}
                 </label>
                 <select
+                  id={`map-${field.key}`}
                   value={mapping[field.key]}
                   onChange={(e) =>
                     setMapping((prev) => ({ ...prev, [field.key]: e.target.value }))
@@ -378,7 +407,7 @@ export function UploadDataView({ onAnalyze, initialSampleId }: UploadDataViewPro
                 <tbody className="divide-y divide-slate-100">
                   {parsedTable.rows.slice(0, 6).map((row, idx) => (
                     <tr key={idx} className="hover:bg-slate-50/70">
-                      <td className="px-3 py-2 font-mono tabular-nums text-slate-400">
+                      <td className="px-3 py-2 font-mono tabular-nums text-slate-500">
                         #{parsedTable.rowLineNumbers?.[idx] ?? idx + 2}
                       </td>
                       {parsedTable.headers.map((header) => (

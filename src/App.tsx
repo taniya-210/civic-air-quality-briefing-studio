@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Menu, Upload } from 'lucide-react';
 import { AnalysisView } from './components/AnalysisView';
 import { BriefingsView } from './components/BriefingsView';
@@ -47,6 +47,7 @@ export default function App() {
   const [readingLevel, setReadingLevel] = useState<ReadingLevel>('detailed');
   const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
   const [briefingError, setBriefingError] = useState<string | null>(null);
+  const inFlightKeyRef = useRef<string | null>(null);
 
   const loadSavedPeriods = useCallback(async () => {
     try {
@@ -100,9 +101,15 @@ export default function App() {
 
   const handleGenerateBriefing = async (
     targetLang: BriefingLanguage,
-    targetLevel: ReadingLevel
+    targetLevel: ReadingLevel,
+    forceRefresh = true
   ) => {
     if (!analysis) return;
+    const key = `${analysis.id}|${targetLang}|${targetLevel}`;
+    if (!forceRefresh && briefingCache[key]) return;
+    if (inFlightKeyRef.current === key) return;
+
+    inFlightKeyRef.current = key;
     setIsGeneratingBriefing(true);
     setBriefingError(null);
     try {
@@ -119,7 +126,6 @@ export default function App() {
       if (!res.ok) {
         throw new Error(data.error || 'Failed to generate AI briefing.');
       }
-      const key = `${analysis.id}|${targetLang}|${targetLevel}`;
       setBriefingCache((prev) => ({
         ...prev,
         [key]: data.briefingPack as GeneratedBriefingPack,
@@ -129,6 +135,9 @@ export default function App() {
         err instanceof Error ? err.message : 'Unable to reach Gemini briefing service.'
       );
     } finally {
+      if (inFlightKeyRef.current === key) {
+        inFlightKeyRef.current = null;
+      }
       setIsGeneratingBriefing(false);
     }
   };
@@ -178,6 +187,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex bg-slate-50 text-slate-900">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:bg-slate-900 focus:text-white focus:text-xs focus:font-medium focus:rounded-lg focus:outline-2 focus:outline-teal-600"
+      >
+        Skip to main content
+      </a>
       <Sidebar
         activeView={activeView}
         onSelectView={setActiveView}
@@ -228,7 +243,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 w-full max-w-[1260px] mx-auto px-5 sm:px-8 py-6">
+        <main id="main-content" tabIndex={-1} className="flex-1 w-full max-w-[1260px] mx-auto px-5 sm:px-8 py-6 focus:outline-none">
           {activeView === 'overview' && (
             <OverviewView
               analysis={analysis}

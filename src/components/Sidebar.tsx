@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   BarChart3,
   Building2,
@@ -44,6 +45,15 @@ export function Sidebar({
   mobileOpen,
   onCloseMobile,
 }: SidebarProps) {
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCloseMobile();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileOpen, onCloseMobile]);
+
   const navContent = (
     <div className="flex h-full flex-col justify-between bg-white border-r border-slate-200 px-4 py-5">
       <div>
@@ -74,6 +84,7 @@ export function Sidebar({
               <button
                 key={item.id}
                 type="button"
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => {
                   onSelectView(item.id);
                   onCloseMobile();
@@ -86,15 +97,16 @@ export function Sidebar({
               >
                 <span className="flex items-center gap-2.5 min-w-0">
                   <Icon
+                    aria-hidden="true"
                     className={`w-4 h-4 shrink-0 ${
-                      isActive ? 'text-teal-300' : 'text-slate-400'
+                      isActive ? 'text-teal-300' : 'text-slate-500'
                     }`}
                   />
                   <span className="truncate whitespace-nowrap">{item.label}</span>
                 </span>
                 <span
                   className={`font-mono text-[11px] tabular-nums shrink-0 ${
-                    isActive ? 'text-slate-300' : 'text-slate-400'
+                    isActive ? 'text-slate-300' : 'text-slate-500'
                   }`}
                 >
                   {item.step}
@@ -141,7 +153,12 @@ export function Sidebar({
 
       {/* Mobile overlay drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
+        <div
+          className="fixed inset-0 z-50 lg:hidden flex"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Workspace navigation"
+        >
           <div
             className="fixed inset-0 bg-slate-900/40"
             onClick={onCloseMobile}

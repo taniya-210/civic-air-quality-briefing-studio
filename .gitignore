@@ -1,9 +1,36 @@
+# Dependencies
 node_modules/
-build/
+
+# Production & intermediate build outputs
 dist/
+build/
+out/
+server.js
+*.tsbuildinfo
+
+# Caches & coverage
 coverage/
-.DS_Store
+.vite/
+.cache/
+.turbo/
+.parcel-cache/
+.eslintcache
+
+# Local runtime storage & temporary files
+.studio-data/
+tmp/
+temp/
+*.tmp
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+bun-debug.log*
+
+# Environment & OS files (keep .env.example template tracked)
 .env*
 !.env.example
-.studio-data/
+.DS_Store
+Thumbs.db

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -49,15 +49,18 @@ export function ComparisonView({
   const [language, setLanguage] = useState<BriefingLanguage>('en');
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [aiComparison, setAiComparison] = useState<ComparativeBriefingResponse | null>(null);
+  const [aiComparisonCache, setAiComparisonCache] = useState<
+    Record<string, ComparativeBriefingResponse>
+  >({});
+  const inFlightCompareRef = useRef<string | null>(null);
 
-  // Sync label input and reset stale comparison state whenever a new dataset is analyzed
+  // Sync label input and reset stale active comparison state whenever a new dataset is analyzed
   useEffect(() => {
     if (activeAnalysis) {
       setPeriodLabelInput(activeAnalysis.periodLabel);
       setSaveMessage(null);
       setSaveError(null);
-      setAiComparison(null);
+      setAiError(null);
     }
   }, [activeAnalysis?.id, activeAnalysis?.periodLabel]);
 
@@ -95,6 +98,12 @@ export function ComparisonView({
     return comparePeriods(periodA, periodB);
   }, [periodA, periodB]);
 
+  const compareCacheKey =
+    periodA && periodB
+      ? `${periodA.analysis.id}|${periodB.analysis.id}|${language}`
+      : '';
+  const aiComparison = compareCacheKey ? aiComparisonCache[compareCacheKey] ?? null : null;
+
   const handleSave = async () => {
     if (!activeAnalysis) return;
     setSaveError(null);
@@ -121,8 +130,12 @@ export function ComparisonView({
     }
   };
 
-  const handleGenerateComparativeAi = async () => {
-    if (!comparison) return;
+  const handleGenerateComparativeAi = async (forceRefresh = false) => {
+    if (!comparison || !compareCacheKey) return;
+    if (!forceRefresh && aiComparisonCache[compareCacheKey]) return;
+    if (inFlightCompareRef.current === compareCacheKey) return;
+
+    inFlightCompareRef.current = compareCacheKey;
     setIsGeneratingAi(true);
     setAiError(null);
     try {
@@ -135,10 +148,14 @@ export function ComparisonView({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to generate comparative summary.');
       }
-      setAiComparison(data.comparisonBriefing);
+      setAiComparisonCache((prev) => ({
+        ...prev,
+        [compareCacheKey]: data.comparisonBriefing as ComparativeBriefingResponse,
+      }));
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Unable to reach Gemini service.');
     } finally {
+      inFlightCompareRef.current = null;
       setIsGeneratingAi(false);
     }
   };
@@ -161,24 +178,25 @@ export function ComparisonView({
         {activeAnalysis ? (
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-[220px]">
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label htmlFor="period-label-input" className="block text-xs font-medium text-slate-700 mb-1">
                 Period Label
               </label>
               <input
+                id="period-label-input"
                 type="text"
                 value={periodLabelInput}
                 onChange={(e) => setPeriodLabelInput(e.target.value)}
                 placeholder={activeAnalysis.periodLabel}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:border-teal-700"
               />
             </div>
             <button
               type="button"
               onClick={handleSave}
               disabled={isSaving || activeAnalysis.qualityReport.validRows === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
             >
-              <BookmarkPlus className="w-4 h-4" />
+              <BookmarkPlus className="w-4 h-4" aria-hidden="true" />
               {isSaving ? 'Saving...' : 'Save Current Analysis'}
             </button>
           </div>
@@ -189,12 +207,16 @@ export function ComparisonView({
         )}
 
         {saveMessage && (
-          <div className="text-xs text-emerald-800 flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+          <div role="status" aria-live="polite" className="text-xs text-emerald-800 flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700" aria-hidden="true" />
             <span>{saveMessage}</span>
           </div>
         )}
-        {saveError && <div className="text-xs text-red-700">{saveError}</div>}
+        {saveError && (
+          <div role="alert" className="text-xs text-red-700">
+            {saveError}
+          </div>
+        )}
       </div>
 
       {/* Saved Periods List */}
@@ -203,12 +225,12 @@ export function ComparisonView({
           Saved Reporting Periods ({savedPeriods.length})
         </h3>
         {periodsError && (
-          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <div role="alert" className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {periodsError}
           </div>
         )}
         {deleteError && (
-          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <div role="alert" className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {deleteError}
           </div>
         )}
@@ -268,16 +290,17 @@ export function ComparisonView({
         <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label htmlFor="baseline-period-select" className="block text-xs font-medium text-slate-700 mb-1">
                 Baseline Period (Period A)
               </label>
               <select
+                id="baseline-period-select"
                 value={resolvedAId}
                 onChange={(e) => {
                   setPeriodAId(e.target.value);
-                  setAiComparison(null);
+                  setAiError(null);
                 }}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:border-teal-700"
               >
                 {selectablePeriods.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -288,16 +311,17 @@ export function ComparisonView({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label htmlFor="comparison-period-select" className="block text-xs font-medium text-slate-700 mb-1">
                 Comparison Period (Period B)
               </label>
               <select
+                id="comparison-period-select"
                 value={resolvedBId}
                 onChange={(e) => {
                   setPeriodBId(e.target.value);
-                  setAiComparison(null);
+                  setAiError(null);
                 }}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:border-teal-700"
               >
                 {selectablePeriods.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -481,13 +505,14 @@ export function ComparisonView({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                    <div role="group" aria-label="Comparison briefing language" className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
                       {(['en', 'hi', 'mr'] as BriefingLanguage[]).map((lang) => (
                         <button
                           key={lang}
                           type="button"
+                          aria-pressed={language === lang}
                           onClick={() => setLanguage(lang)}
-                          className={`px-2.5 py-1 text-xs font-medium rounded-md ${
+                          className={`px-2.5 py-1 text-xs font-medium rounded-md focus-visible:outline-2 focus-visible:outline-teal-700 ${
                             language === lang
                               ? 'bg-white text-slate-900 shadow-sm'
                               : 'text-slate-600'
@@ -500,25 +525,44 @@ export function ComparisonView({
                     <button
                       type="button"
                       disabled={isGeneratingAi}
-                      onClick={handleGenerateComparativeAi}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-teal-800 rounded-lg hover:bg-teal-900 disabled:opacity-50 whitespace-nowrap shrink-0"
+                      onClick={() => handleGenerateComparativeAi(Boolean(aiComparison))}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-teal-800 rounded-lg hover:bg-teal-900 disabled:opacity-50 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
                     >
                       {isGeneratingAi ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                       ) : (
-                        <Sparkles className="w-3.5 h-3.5" />
+                        <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
                       )}
-                      {isGeneratingAi ? 'Synthesizing...' : 'Generate Comparison Brief'}
+                      {isGeneratingAi
+                        ? 'Synthesizing...'
+                        : aiComparison
+                        ? 'Regenerate Brief'
+                        : 'Generate Comparison Brief'}
                     </button>
                   </div>
                 </div>
 
+                {isGeneratingAi && (
+                  <div
+                    role="status"
+                    aria-busy="true"
+                    className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3"
+                  >
+                    <span className="sr-only">Synthesizing period comparison briefing...</span>
+                    <div className="h-4 w-1/2 bg-slate-200 rounded animate-pulse" />
+                    <div className="h-3 w-full bg-slate-100 rounded animate-pulse" />
+                  </div>
+                )}
+
                 {aiError && (
-                  <div className="flex items-start justify-between gap-3 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div
+                    role="alert"
+                    className="flex items-start justify-between gap-3 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg p-3"
+                  >
                     <span>{aiError}</span>
                     <button
                       type="button"
-                      onClick={handleGenerateComparativeAi}
+                      onClick={() => handleGenerateComparativeAi(true)}
                       disabled={isGeneratingAi}
                       className="px-2.5 py-1 text-xs font-medium text-red-900 bg-white border border-red-300 rounded-md hover:bg-red-100 whitespace-nowrap shrink-0"
                     >

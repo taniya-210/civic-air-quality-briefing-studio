@@ -80,4 +80,38 @@ describe('csvParser — messy format ingestion & line tracking', () => {
     assert.throws(() => parseTabularText('   '), /Input is empty/i);
     assert.throws(() => parseTabularText('a,b,c'), /at least one monitoring row/i);
   });
+
+  it('handles CRLF line endings, escaped double quotes, blank lines, and pipe delimiters', () => {
+    const raw = [
+      'location|timestamp|pollutant|value|unit',
+      '',
+      '"Sector ""A"" Gate"|2026-11-08 08:00|PM2.5|92|ug/m3',
+      'Market Road|2026-11-08 09:00|PM2.5|114|ug/m3',
+    ].join('\r\n');
+
+    const parsed = parseTabularText(raw);
+    assert.equal(parsed.detectedDelimiter, '|');
+    assert.equal(parsed.rows.length, 2);
+    assert.equal(parsed.rows[0].location, 'Sector "A" Gate');
+    assert.deepEqual(parsed.rowLineNumbers, [3, 4]);
+  });
+
+  it('parses 5,000+ unquoted CSV rows quickly via fast path with accurate line numbers', () => {
+    const lines = ['location,timestamp,pollutant,value,unit'];
+    for (let i = 0; i < 5000; i++) {
+      const day = String(1 + (i % 28)).padStart(2, '0');
+      const hour = String(i % 24).padStart(2, '0');
+      lines.push(`Station_${i % 10},2026-11-${day} ${hour}:00,PM2.5,${40 + (i % 80)},ug/m3`);
+    }
+    const raw = lines.join('\n');
+    const t0 = performance.now();
+    const parsed = parseTabularText(raw);
+    const elapsedMs = performance.now() - t0;
+
+    assert.equal(parsed.rows.length, 5000);
+    assert.equal(parsed.rowLineNumbers[0], 2);
+    assert.equal(parsed.rowLineNumbers[4999], 5001);
+    assert.equal(parsed.rows[4999].location, 'Station_9');
+    assert.ok(elapsedMs < 1000, `Expected <1000ms parse time, took ${elapsedMs.toFixed(1)}ms`);
+  });
 });

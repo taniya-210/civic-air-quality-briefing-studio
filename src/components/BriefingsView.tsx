@@ -17,6 +17,7 @@ import type {
   GeneratedBriefingPack,
   ReadingLevel,
 } from '../types/airQuality';
+import { LANG_LABELS, LANG_SHORT_LABELS } from '../lib/constants';
 import { ReliabilityBanner } from './ReliabilityBanner';
 
 interface BriefingsViewProps {
@@ -31,12 +32,6 @@ interface BriefingsViewProps {
   onGenerate: (lang: BriefingLanguage, level: ReadingLevel) => void;
   onNavigate: (view: DashboardView) => void;
 }
-
-const LANG_LABELS: Record<BriefingLanguage, string> = {
-  en: 'English',
-  hi: 'हिन्दी (Hindi)',
-  mr: 'मराठी (Marathi)',
-};
 
 export function BriefingsView({
   analysis,
@@ -138,29 +133,31 @@ export function BriefingsView({
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Language selector */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+          <div role="group" aria-label="Briefing language" className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
             {(['en', 'hi', 'mr'] as BriefingLanguage[]).map((lang) => (
               <button
                 key={lang}
                 type="button"
+                aria-pressed={language === lang}
                 onClick={() => onChangeLanguage(lang)}
-                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-teal-700 ${
                   language === lang
                     ? 'bg-white text-slate-900 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                {lang === 'en' ? 'English' : lang === 'hi' ? 'हिन्दी' : 'मराठी'}
+                {LANG_SHORT_LABELS[lang]}
               </button>
             ))}
           </div>
 
           {/* Reading level selector */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+          <div role="group" aria-label="Reading level" className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
             <button
               type="button"
+              aria-pressed={readingLevel === 'simple'}
               onClick={() => onChangeReadingLevel('simple')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-teal-700 ${
                 readingLevel === 'simple'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -170,8 +167,9 @@ export function BriefingsView({
             </button>
             <button
               type="button"
+              aria-pressed={readingLevel === 'detailed'}
               onClick={() => onChangeReadingLevel('detailed')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-teal-700 ${
                 readingLevel === 'detailed'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -210,9 +208,12 @@ export function BriefingsView({
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start justify-between gap-4">
+        <div
+          role="alert"
+          className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start justify-between gap-4"
+        >
           <div className="flex items-start gap-2.5 text-sm text-red-900">
-            <AlertCircle className="w-4 h-4 text-red-700 mt-0.5 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-red-700 mt-0.5 shrink-0" aria-hidden="true" />
             <div className="space-y-1">
               <div className="font-semibold">AI Briefing Generation Unavailable</div>
               <div className="text-xs text-red-800 leading-relaxed">{error}</div>
@@ -222,7 +223,7 @@ export function BriefingsView({
             type="button"
             onClick={() => onGenerate(language, readingLevel)}
             disabled={isGenerating || zeroValid}
-            className="px-3 py-1.5 text-xs font-medium text-red-900 bg-white border border-red-300 rounded-lg hover:bg-red-100 whitespace-nowrap shrink-0"
+            className="px-3 py-1.5 text-xs font-medium text-red-900 bg-white border border-red-300 rounded-lg hover:bg-red-100 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-red-700"
           >
             Retry
           </button>
@@ -230,7 +231,12 @@ export function BriefingsView({
       )}
 
       {isGenerating && (
-        <div className="bg-white border border-slate-200 rounded-xl p-8 space-y-4">
+        <div
+          role="status"
+          aria-busy="true"
+          className="bg-white border border-slate-200 rounded-xl p-8 space-y-4"
+        >
+          <span className="sr-only">Generating evidence-grounded briefings from validated metrics...</span>
           <div className="h-5 w-2/3 bg-slate-200 rounded animate-pulse" />
           <div className="h-4 w-full bg-slate-100 rounded animate-pulse" />
           <div className="h-4 w-5/6 bg-slate-100 rounded animate-pulse" />
@@ -409,8 +415,9 @@ export function BriefingsView({
           <div className="no-print bg-white border border-slate-200 rounded-xl p-5 space-y-3">
             <button
               type="button"
+              aria-expanded={showTraceability}
               onClick={() => setShowTraceability((prev) => !prev)}
-              className="w-full flex items-center justify-between text-left"
+              className="w-full flex items-center justify-between text-left focus-visible:outline-2 focus-visible:outline-teal-700 rounded-lg"
             >
               <div>
                 <div className="text-sm font-semibold text-slate-900">
@@ -422,9 +429,9 @@ export function BriefingsView({
                 </div>
               </div>
               {showTraceability ? (
-                <ChevronUp className="w-4 h-4 text-slate-500" />
+                <ChevronUp className="w-4 h-4 text-slate-500" aria-hidden="true" />
               ) : (
-                <ChevronDown className="w-4 h-4 text-slate-500" />
+                <ChevronDown className="w-4 h-4 text-slate-500" aria-hidden="true" />
               )}
             </button>
 

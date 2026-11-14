@@ -1,25 +1,39 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import express from 'express';
 import type { AddressInfo } from 'node:net';
-import {
-  generateBriefingsWithGemini,
-  generateComparisonBriefingWithGemini,
-  mapGeminiError,
-} from '../server/gemini';
+import { createApp } from '../server/app';
+import { generateBriefingsWithGemini, mapGeminiError } from '../server/gemini';
 import { deleteSavedPeriod, listSavedPeriods, savePeriodRecord } from '../server/storage';
 import { validateAndAnalyzeTable } from '../src/lib/airQualityEngine';
 import { inferColumnMapping, parseTabularText } from '../src/lib/csvParser';
 import { SAMPLE_DATASETS } from '../src/lib/sampleDatasets';
 import type { SavedPeriodRecord } from '../src/types/airQuality';
 
-describe('API error handling, server validation & period persistence', () => {
-  it('maps Gemini SDK/API error cases to clear HTTP status codes and messages', () => {
+async function startServer(app: ReturnType<typeof createApp>) {
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  const port = (server.address() as AddressInfo).port;
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+describe('API error handling, server security, rate limiting & period persistence', () => {
+  it('maps Gemini SDK/API error cases and masks raw JSON blobs safely', () => {
     const missing = Object.assign(new Error('Missing key'), { code: 'MISSING_API_KEY' });
     assert.deepEqual(mapGeminiError(missing), {
       statusCode: 503,
       code: 'MISSING_API_KEY',
       message: 'Missing key',
+    });
+
+    const invalidAi = Object.assign(new Error('Malformed output'), { code: 'INVALID_AI_RESPONSE' });
+    assert.deepEqual(mapGeminiError(invalidAi), {
+      statusCode: 502,
+      code: 'INVALID_AI_RESPONSE',
+      message: 'Malformed output',
     });
 
     const invalidKey = Object.assign(new Error('PERMISSION_DENIED: invalid key'), { status: 403 });
@@ -41,6 +55,12 @@ describe('API error handling, server validation & period persistence', () => {
     assert.equal(mapGeminiError(unavailable).statusCode, 503);
     assert.equal(mapGeminiError(unavailable).code, 'SERVICE_UNAVAILABLE');
     assert.ok(mapGeminiError(unavailable).message.includes('temporarily experiencing high demand'));
+
+    const rawJsonFallback = Object.assign(new Error('{"internal":"trace"}'), { status: 500 });
+    const mappedFallback = mapGeminiError(rawJsonFallback);
+    assert.equal(mappedFallback.statusCode, 500);
+    assert.equal(mappedFallback.code, 'GEMINI_API_ERROR');
+    assert.equal(mappedFallback.message.startsWith('{'), false);
   });
 
   it('rejects briefing generation with 503 MISSING_API_KEY when GEMINI_API_KEY is absent', async () => {
@@ -70,93 +90,51 @@ describe('API error handling, server validation & period persistence', () => {
     }
   });
 
-  it('validates backend API payloads and executes period save/list/delete roundtrip', async () => {
-    const app = express();
-    app.use(express.json());
-
-    app.get('/api/periods', async (_req, res) => {
-      const periods = await listSavedPeriods();
-      res.json({ periods });
-    });
-
-    app.post('/api/periods', async (req, res) => {
-      const record = req.body as SavedPeriodRecord;
-      if (!record?.id || !record?.periodLabel || !record?.analysis) {
-        res.status(400).json({ error: 'Invalid period payload.' });
-        return;
-      }
-      const periods = await savePeriodRecord(record);
-      res.status(201).json({ periods, saved: record });
-    });
-
-    app.delete('/api/periods/:id', async (req, res) => {
-      const periods = await deleteSavedPeriod(req.params.id);
-      res.json({ periods });
-    });
-
-    app.post('/api/briefings/generate', async (req, res) => {
-      const { analysis } = req.body ?? {};
-      if (!analysis || !analysis.qualityReport || !Array.isArray(analysis.pollutantSummaries)) {
-        res.status(400).json({ code: 'INVALID_ANALYSIS_PAYLOAD', error: 'Missing analysis.' });
-        return;
-      }
-      if (analysis.qualityReport.validRows === 0) {
-        res.status(400).json({ code: 'ZERO_VALID_READINGS', error: 'Zero valid rows.' });
-        return;
-      }
-      try {
-        const pack = await generateBriefingsWithGemini(analysis, 'en', 'simple');
-        res.json({ briefingPack: pack });
-      } catch (err) {
-        const mapped = mapGeminiError(err);
-        res.status(mapped.statusCode).json({ error: mapped.message, code: mapped.code });
-      }
-    });
-
-    app.post('/api/briefings/compare', async (req, res) => {
-      const { comparison } = req.body ?? {};
-      if (!comparison || !Array.isArray(comparison.pollutantComparisons)) {
-        res.status(400).json({ code: 'INVALID_COMPARISON_PAYLOAD', error: 'Invalid comparison.' });
-        return;
-      }
-      try {
-        const summary = await generateComparisonBriefingWithGemini(comparison, 'en');
-        res.json({ comparisonBriefing: summary });
-      } catch (err) {
-        const mapped = mapGeminiError(err);
-        res.status(mapped.statusCode).json({ error: mapped.message, code: mapped.code });
-      }
-    });
-
-    const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
-      const s = app.listen(0, '127.0.0.1', () => resolve(s));
-    });
-    const port = (server.address() as AddressInfo).port;
-    const baseUrl = `http://127.0.0.1:${port}`;
+  it('serves security headers, validates JSON/IDs/payloads, and executes real server/app.ts roundtrip', async () => {
+    const app = createApp({ disableRateLimit: true });
+    const srv = await startServer(app);
     const testId = `__test_period_${Date.now()}__`;
 
     try {
-      // 1. Briefing validation guardrails
-      const badGenRes = await fetch(`${baseUrl}/api/briefings/generate`, {
+      // 1. Health & Security headers
+      const healthRes = await fetch(`${srv.baseUrl}/api/health`);
+      assert.equal(healthRes.status, 200);
+      assert.equal(healthRes.headers.get('x-content-type-options'), 'nosniff');
+      assert.equal(healthRes.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+      assert.equal(healthRes.headers.get('x-powered-by'), null);
+      const healthJson = await healthRes.json();
+      assert.equal(healthJson.status, 'ok');
+      assert.equal(typeof healthJson.geminiConfigured, 'boolean');
+
+      // 2. Malformed JSON returns structured 400 INVALID_JSON
+      const badJsonRes = await fetch(`${srv.baseUrl}/api/briefings/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{not-valid-json',
+      });
+      assert.equal(badJsonRes.status, 400);
+      assert.equal((await badJsonRes.json()).code, 'INVALID_JSON');
+
+      // 3. Briefing validation guardrails
+      const badGenRes = await fetch(`${srv.baseUrl}/api/briefings/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
       assert.equal(badGenRes.status, 400);
-      const badGenJson = await badGenRes.json();
-      assert.equal(badGenJson.code, 'INVALID_ANALYSIS_PAYLOAD');
+      assert.equal((await badGenRes.json()).code, 'INVALID_ANALYSIS_PAYLOAD');
 
-      const zeroRowsRes = await fetch(`${baseUrl}/api/briefings/generate`, {
+      const zeroRowsRes = await fetch(`${srv.baseUrl}/api/briefings/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          analysis: { qualityReport: { validRows: 0 }, pollutantSummaries: [] },
+          analysis: { qualityReport: { validRows: 0 }, pollutantSummaries: [{ pollutant: 'PM2.5' }] },
         }),
       });
       assert.equal(zeroRowsRes.status, 400);
       assert.equal((await zeroRowsRes.json()).code, 'ZERO_VALID_READINGS');
 
-      const badCompareRes = await fetch(`${baseUrl}/api/briefings/compare`, {
+      const badCompareRes = await fetch(`${srv.baseUrl}/api/briefings/compare`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -164,7 +142,22 @@ describe('API error handling, server validation & period persistence', () => {
       assert.equal(badCompareRes.status, 400);
       assert.equal((await badCompareRes.json()).code, 'INVALID_COMPARISON_PAYLOAD');
 
-      // 2. Period persistence save -> list -> delete roundtrip
+      // 4. Period ID & payload validation
+      const badDeleteRes = await fetch(`${srv.baseUrl}/api/periods/${encodeURIComponent('../bad!id')}`, {
+        method: 'DELETE',
+      });
+      assert.equal(badDeleteRes.status, 400);
+      assert.equal((await badDeleteRes.json()).code, 'INVALID_PERIOD_ID');
+
+      const badPostPeriodRes = await fetch(`${srv.baseUrl}/api/periods`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'bad/id', periodLabel: 'x', datasetName: 'y' }),
+      });
+      assert.equal(badPostPeriodRes.status, 400);
+      assert.equal((await badPostPeriodRes.json()).code, 'INVALID_PERIOD_PAYLOAD');
+
+      // 5. Real period persistence save -> list -> delete roundtrip
       const spec = SAMPLE_DATASETS[3];
       const table = parseTabularText(spec.csv);
       const analysis = validateAndAnalyzeTable(table, inferColumnMapping(table.headers), {
@@ -172,7 +165,7 @@ describe('API error handling, server validation & period persistence', () => {
         datasetName: spec.filename,
       });
 
-      const postPeriodRes = await fetch(`${baseUrl}/api/periods`, {
+      const postPeriodRes = await fetch(`${srv.baseUrl}/api/periods`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -187,7 +180,7 @@ describe('API error handling, server validation & period persistence', () => {
       const postData = await postPeriodRes.json();
       assert.ok(postData.periods.some((p: SavedPeriodRecord) => p.id === testId));
 
-      const delRes = await fetch(`${baseUrl}/api/periods/${encodeURIComponent(testId)}`, {
+      const delRes = await fetch(`${srv.baseUrl}/api/periods/${encodeURIComponent(testId)}`, {
         method: 'DELETE',
       });
       assert.equal(delRes.status, 200);
@@ -195,7 +188,67 @@ describe('API error handling, server validation & period persistence', () => {
       assert.ok(!delData.periods.some((p: SavedPeriodRecord) => p.id === testId));
     } finally {
       await deleteSavedPeriod(testId);
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await srv.close();
+    }
+  });
+
+  it('enforces AI endpoint sliding-window rate limit (429 RATE_LIMITED)', async () => {
+    const app = createApp({ disableRateLimit: false });
+    const srv = await startServer(app);
+    try {
+      // First 20 invalid requests consume the 20/min window with 400; #21 must trigger 429
+      for (let i = 0; i < 20; i++) {
+        const res = await fetch(`${srv.baseUrl}/api/briefings/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        assert.equal(res.status, 400);
+      }
+
+      const limitedRes = await fetch(`${srv.baseUrl}/api/briefings/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      assert.equal(limitedRes.status, 429);
+      assert.ok(limitedRes.headers.get('retry-after'));
+      assert.equal((await limitedRes.json()).code, 'RATE_LIMITED');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('serializes concurrent savePeriodRecord calls without race conditions or lost writes', async () => {
+    const spec = SAMPLE_DATASETS[3];
+    const t = parseTabularText(spec.csv);
+    const analysis = validateAndAnalyzeTable(t, inferColumnMapping(t.headers), {
+      periodLabel: 'Concurrency Test',
+      datasetName: spec.filename,
+    });
+
+    const ids = Array.from({ length: 5 }, (_, i) => `__test_conc_${Date.now()}_${i}`);
+    try {
+      await Promise.all(
+        ids.map((id, i) =>
+          savePeriodRecord({
+            id,
+            periodLabel: `Concurrency ${i}`,
+            datasetName: spec.filename,
+            savedAtIso: new Date().toISOString(),
+            analysis,
+          })
+        )
+      );
+
+      const all = await listSavedPeriods();
+      for (const id of ids) {
+        assert.ok(all.some((p) => p.id === id), `Missing concurrent saved record ${id}`);
+      }
+    } finally {
+      for (const id of ids) {
+        await deleteSavedPeriod(id);
+      }
     }
   });
 });

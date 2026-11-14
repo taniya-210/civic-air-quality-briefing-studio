@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Search, Upload } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Search, Upload } from 'lucide-react';
 import type { AnalysisResult, DashboardView } from '../types/airQuality';
 import { ReliabilityBanner } from './ReliabilityBanner';
 
@@ -8,9 +8,12 @@ interface DataQualityViewProps {
   onNavigate: (view: DashboardView) => void;
 }
 
+const ROWS_PER_PAGE = 100;
+
 export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) {
   const [tab, setTab] = useState<'flagged' | 'valid'>('flagged');
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
 
   const filteredFlagged = useMemo(() => {
     if (!analysis) return [];
@@ -37,6 +40,10 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
     );
   }, [analysis, query]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [tab, query, analysis?.id]);
+
   if (!analysis) {
     return (
       <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3">
@@ -50,9 +57,9 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
         <button
           type="button"
           onClick={() => onNavigate('upload')}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
         >
-          <Upload className="w-4 h-4" />
+          <Upload className="w-4 h-4" aria-hidden="true" />
           Go to Upload Data
         </button>
       </div>
@@ -60,6 +67,12 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
   }
 
   const qr = analysis.qualityReport;
+  const activeTotal = tab === 'flagged' ? filteredFlagged.length : filteredValid.length;
+  const totalPages = Math.max(1, Math.ceil(activeTotal / ROWS_PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const startIdx = (safePage - 1) * ROWS_PER_PAGE;
+  const pageFlagged = filteredFlagged.slice(startIdx, startIdx + ROWS_PER_PAGE);
+  const pageValid = filteredValid.slice(startIdx, startIdx + ROWS_PER_PAGE);
 
   return (
     <div className="space-y-6">
@@ -143,11 +156,13 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
       {/* Row-by-row Inspector */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+          <div role="tablist" aria-label="Row audit filter" className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'flagged'}
               onClick={() => setTab('flagged')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-teal-700 ${
                 tab === 'flagged'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -157,8 +172,10 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'valid'}
               onClick={() => setTab('valid')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-teal-700 ${
                 tab === 'valid'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -169,13 +186,20 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
           </div>
 
           <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <label htmlFor="quality-search-input" className="sr-only">
+              Filter by row number, station, or issue
+            </label>
+            <Search
+              className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"
+              aria-hidden="true"
+            />
             <input
+              id="quality-search-input"
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter by row #, station, issue..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:border-teal-700"
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:border-teal-700 focus-visible:ring-1 focus-visible:ring-teal-700"
             />
           </div>
         </div>
@@ -183,7 +207,7 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
         {tab === 'flagged' ? (
           filteredFlagged.length === 0 ? (
             <div className="py-10 text-center space-y-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-700 mx-auto" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-700 mx-auto" aria-hidden="true" />
               <div className="text-sm font-medium text-slate-900">
                 {qr.flaggedRowsCount === 0
                   ? 'Zero flagged rows — all records passed structural validation.'
@@ -195,13 +219,13 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                    <th className="px-3 py-2.5 font-mono font-medium">Row</th>
-                    <th className="px-3 py-2.5 font-medium">Validation Issue(s)</th>
-                    <th className="px-3 py-2.5 font-mono font-medium">Raw Record</th>
+                    <th scope="col" className="px-3 py-2.5 font-mono font-medium">Row</th>
+                    <th scope="col" className="px-3 py-2.5 font-medium">Validation Issue(s)</th>
+                    <th scope="col" className="px-3 py-2.5 font-mono font-medium">Raw Record</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredFlagged.map((row) => (
+                  {pageFlagged.map((row) => (
                     <tr key={row.rowIndex} className="hover:bg-slate-50/70 align-top">
                       <td className="px-3 py-2.5 font-mono tabular-nums text-red-700 font-semibold whitespace-nowrap">
                         #{row.rowIndex}
@@ -209,7 +233,7 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
                       <td className="px-3 py-2.5 space-y-1 text-red-900">
                         {row.issues.map((issue, i) => (
                           <div key={i} className="flex items-start gap-1.5">
-                            <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
+                            <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" aria-hidden="true" />
                             <span>{issue.message}</span>
                           </div>
                         ))}
@@ -225,22 +249,26 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
               </table>
             </div>
           )
+        ) : filteredValid.length === 0 ? (
+          <div className="py-10 text-center text-sm text-slate-600">
+            No validated readings match your filter.
+          </div>
         ) : (
           <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-[420px]">
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600">
                 <tr>
-                  <th className="px-3 py-2.5 font-mono font-medium">Row</th>
-                  <th className="px-3 py-2.5 font-medium">Location</th>
-                  <th className="px-3 py-2.5 font-medium">Pollutant</th>
-                  <th className="px-3 py-2.5 font-mono font-medium">Timestamp</th>
-                  <th className="px-3 py-2.5 font-mono font-medium text-right">Value</th>
-                  <th className="px-3 py-2.5 font-mono font-medium">Unit</th>
-                  <th className="px-3 py-2.5 font-medium">Audit Note</th>
+                  <th scope="col" className="px-3 py-2.5 font-mono font-medium">Row</th>
+                  <th scope="col" className="px-3 py-2.5 font-medium">Location</th>
+                  <th scope="col" className="px-3 py-2.5 font-medium">Pollutant</th>
+                  <th scope="col" className="px-3 py-2.5 font-mono font-medium">Timestamp</th>
+                  <th scope="col" className="px-3 py-2.5 font-mono font-medium text-right">Value</th>
+                  <th scope="col" className="px-3 py-2.5 font-mono font-medium">Unit</th>
+                  <th scope="col" className="px-3 py-2.5 font-medium">Audit Note</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredValid.map((r) => (
+                {pageValid.map((r) => (
                   <tr key={r.rowIndex} className="hover:bg-slate-50/70">
                     <td className="px-3 py-2 font-mono tabular-nums text-slate-500">
                       #{r.rowIndex}
@@ -265,6 +293,37 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {activeTotal > ROWS_PER_PAGE && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-slate-600">
+            <span className="font-mono tabular-nums">
+              Showing {startIdx + 1}–{Math.min(startIdx + ROWS_PER_PAGE, activeTotal)} of {activeTotal} rows
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1 border border-slate-300 rounded-md bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-teal-700"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                Prev
+              </button>
+              <span className="font-mono tabular-nums px-2">
+                Page {safePage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1 border border-slate-300 rounded-md bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-teal-700"
+              >
+                Next
+                <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         )}
       </div>

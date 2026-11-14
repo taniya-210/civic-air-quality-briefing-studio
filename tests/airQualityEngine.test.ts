@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   comparePeriods,
   isMissingSentinel,
+  normalizePollutantName,
+  normalizeUnitString,
   parseTimestampStrict,
   validateAndAnalyzeTable,
 } from '../src/lib/airQualityEngine';
@@ -157,5 +159,115 @@ describe('airQualityEngine — validation, scientific accuracy & comparisons', (
     assert.ok(
       octVsShort.cautionNotes.some((n) => n.includes('No overlapping monitoring stations'))
     );
+  });
+
+  it('normalizes synonymous pollutant and unit aliases cleanly while preserving incompatible units separately', () => {
+    assert.equal(normalizePollutantName('pm25'), 'PM2.5');
+    assert.equal(normalizePollutantName('Nitrogen Dioxide'), 'NO2');
+    assert.equal(normalizePollutantName('sulphur_dioxide'), 'SO2');
+    assert.equal(normalizePollutantName('Ozone'), 'O3');
+
+    assert.equal(normalizeUnitString('ug/m3'), 'µg/m³');
+    assert.equal(normalizeUnitString('mcg/m3'), 'µg/m³');
+    assert.equal(normalizeUnitString('ug/m^3'), 'µg/m³');
+    assert.equal(normalizeUnitString('micrograms/m3'), 'µg/m³');
+    assert.equal(normalizeUnitString('mg/m3'), 'mg/m³');
+    assert.equal(normalizeUnitString('PPM'), 'ppm');
+    assert.equal(normalizeUnitString('aqi'), 'index');
+  });
+
+  it('calculates exact mean, median, P90, stdDev, and trend directions (rising, falling, stable, insufficient)', () => {
+    const buildSeries = (vals: number[], loc = 'North Chowk') => {
+      const rows = ['location,timestamp,pollutant,value,unit'];
+      vals.forEach((v, i) => {
+        const hh = String(i).padStart(2, '0');
+        rows.push(`${loc},2026-11-08 ${hh}:00,PM2.5,${v},ug/m3`);
+      });
+      const t = parseTabularText(rows.join('\n'));
+      return validateAndAnalyzeTable(t, inferColumnMapping(t.headers), {
+        periodLabel: 'Trend Check',
+        datasetName: 'trend.csv',
+      });
+    };
+
+    const rising = buildSeries([20, 40, 60, 80, 100]);
+    const rSum = rising.pollutantSummaries[0];
+    assert.equal(rSum.mean, 60);
+    assert.equal(rSum.median, 60);
+    assert.equal(rSum.p90, 92);
+    assert.ok(Math.abs(rSum.stdDev - 31.62) < 0.05);
+    assert.equal(rSum.trend.direction, 'rising');
+
+    const falling = buildSeries([100, 80, 60, 40, 20]);
+    assert.equal(falling.pollutantSummaries[0].trend.direction, 'falling');
+
+    const stable = buildSeries([50, 51, 50, 49, 50]);
+    assert.equal(stable.pollutantSummaries[0].trend.direction, 'stable');
+
+    const tooShort = buildSeries([50, 90]);
+    assert.equal(tooShort.pollutantSummaries[0].trend.direction, 'insufficient_data');
+  });
+
+  it('computes 8-hour O3 windows when >=6 hourly samples span >=6h and flags low-sample hotspots', () => {
+    const rows = ['location,timestamp,pollutant,value,unit'];
+    // Station A: 6 hourly O3 readings spanning 6 hours, mean = 120 (> 100 standard)
+    for (let h = 10; h <= 16; h++) {
+      rows.push(`Park Station,2026-11-08 ${String(h).padStart(2, '0')}:00,O3,120,ug/m3`);
+    }
+    // Station B: only 2 readings (low sample < 3)
+    rows.push('Tiny Spot,2026-11-08 10:00,O3,180,ug/m3');
+    rows.push('Tiny Spot,2026-11-08 12:00,O3,180,ug/m3');
+
+    const t = parseTabularText(rows.join('\n'));
+    const analysis = validateAndAnalyzeTable(t, inferColumnMapping(t.headers), {
+      periodLabel: 'O3 Window Test',
+      datasetName: 'o3.csv',
+    });
+
+    const o3 = analysis.pollutantSummaries[0];
+    assert.equal(o3.averagingStatus, 'regulatory_window_supported');
+    assert.equal(o3.regulatoryWindowTotalCount, 1);
+    assert.equal(o3.regulatoryWindowExceedanceCount, 1);
+
+    const lowSampleStats = o3.locationStats.find((s) => s.location === 'Tiny Spot')!;
+    assert.equal(lowSampleStats.isLowSample, true);
+    const lowSampleHotspot = o3.hotspots.find((h) => h.location === 'Tiny Spot')!;
+    assert.ok(lowSampleHotspot.reliabilityNote?.includes('Low sample size (2 readings)'));
+  });
+
+  it('processes 10,000+ readings without call-stack overflow in analysis and comparePeriods', () => {
+    const buildLarge = (offset: number, label: string): SavedPeriodRecord => {
+      const lines = ['location,timestamp,pollutant,value,unit'];
+      for (let i = 0; i < 10000; i++) {
+        const day = 1 + Math.floor(i / 480); // spreads across ~21 days
+        const hour = Math.floor((i % 480) / 20);
+        const min = (i % 20) * 3;
+        const st = `Station_${i % 5}`;
+        lines.push(
+          `${st},2026-10-${String(day).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')},PM2.5,${offset + (i % 40)},ug/m3`
+        );
+      }
+      const t = parseTabularText(lines.join('\n'));
+      const analysis = validateAndAnalyzeTable(t, inferColumnMapping(t.headers), {
+        periodLabel: label,
+        datasetName: `${label}.csv`,
+      });
+      return {
+        id: `id_${label}`,
+        periodLabel: label,
+        datasetName: `${label}.csv`,
+        savedAtIso: '2026-11-12T00:00:00.000Z',
+        analysis,
+      };
+    };
+
+    const recA = buildLarge(40, 'Oct');
+    const recB = buildLarge(70, 'Nov');
+    assert.equal(recA.analysis.qualityReport.validRows, 10000);
+    assert.equal(recB.analysis.qualityReport.validRows, 10000);
+
+    const cmp = comparePeriods(recA, recB);
+    assert.equal(cmp.comparableCount, 1);
+    assert.equal(cmp.pollutantComparisons[0].direction, 'worsened');
   });
 });

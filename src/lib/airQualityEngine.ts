@@ -262,8 +262,14 @@ function computePercentile(sorted: number[], pct: number): number {
 
 function getSeriesSpanHours(readings: ValidatedReading[]): number {
   if (readings.length < 2) return 0;
-  const times = readings.map((r) => r.timestampMs);
-  return roundTo((Math.max(...times) - Math.min(...times)) / 3600000, 1);
+  let minT = readings[0].timestampMs;
+  let maxT = readings[0].timestampMs;
+  for (let i = 1; i < readings.length; i++) {
+    const t = readings[i].timestampMs;
+    if (t < minT) minT = t;
+    if (t > maxT) maxT = t;
+  }
+  return roundTo((maxT - minT) / 3600000, 1);
 }
 
 function findObservedPeak(readings: ValidatedReading[]): ObservedPeak | null {
@@ -743,8 +749,19 @@ export function validateAndAnalyzeTable(
     }
   }
 
+  // Single-pass index of valid readings by pollutant for O(N) summary computation
+  const readingsByPollutant = new Map<string, ValidatedReading[]>();
+  for (const r of candidateValid) {
+    let bucket = readingsByPollutant.get(r.pollutant);
+    if (!bucket) {
+      bucket = [];
+      readingsByPollutant.set(r.pollutant, bucket);
+    }
+    bucket.push(r);
+  }
+
   const pollutantSummaries: PollutantSummary[] = pollutants.map((pollutant) => {
-    const allForPollutant = candidateValid.filter((r) => r.pollutant === pollutant);
+    const allForPollutant = readingsByPollutant.get(pollutant) ?? [];
     const uMap = pollutantUnitCounts.get(pollutant)!;
     const unitBreakdown = Array.from(uMap.entries())
       .map(([unit, count]) => ({ unit, count }))
@@ -752,7 +769,9 @@ export function validateAndAnalyzeTable(
 
     const primaryUnit = unitBreakdown[0].unit;
     const hasMixedUnits = unitBreakdown.length > 1;
-    const compatibleReadings = allForPollutant.filter((r) => r.normalizedUnit === primaryUnit);
+    const compatibleReadings = hasMixedUnits
+      ? allForPollutant.filter((r) => r.normalizedUnit === primaryUnit)
+      : allForPollutant;
     const excludedUnitRowCount = allForPollutant.length - compatibleReadings.length;
 
     const values = compatibleReadings.map((r) => r.value).sort((a, b) => a - b);
@@ -774,9 +793,19 @@ export function validateAndAnalyzeTable(
     const thresholdUsed = getThresholdForReading(pollutant, primaryUnit);
     const trend = computeTrend(compatibleReadings);
 
-    const stationNames = Array.from(new Set(compatibleReadings.map((r) => r.location))).sort();
+    const readingsByStation = new Map<string, ValidatedReading[]>();
+    for (const r of compatibleReadings) {
+      let stBucket = readingsByStation.get(r.location);
+      if (!stBucket) {
+        stBucket = [];
+        readingsByStation.set(r.location, stBucket);
+      }
+      stBucket.push(r);
+    }
+
+    const stationNames = Array.from(readingsByStation.keys()).sort();
     const locationStats: LocationPollutantStats[] = stationNames.map((location) => {
-      const locReadings = compatibleReadings.filter((r) => r.location === location);
+      const locReadings = readingsByStation.get(location)!;
       const locVals = locReadings.map((r) => r.value).sort((a, b) => a - b);
       const locCount = locVals.length;
       const locSpanHours = getSeriesSpanHours(locReadings);
@@ -1095,31 +1124,37 @@ export function comparePeriods(
       continue;
     }
 
-    const sharedReadingsA = periodA.analysis.validReadings.filter(
-      (r) =>
-        r.pollutant === pollutant &&
-        r.normalizedUnit === a.primaryUnit &&
-        sharedStations.includes(r.location)
-    );
-    const sharedReadingsB = periodB.analysis.validReadings.filter(
-      (r) =>
-        r.pollutant === pollutant &&
-        r.normalizedUnit === b.primaryUnit &&
-        sharedStations.includes(r.location)
-    );
+    const sharedStationSet = new Set(sharedStations);
+    let sharedSumA = 0;
+    let sharedCountA = 0;
+    let matchedMaxA = -Infinity;
+    for (const r of periodA.analysis.validReadings) {
+      if (r.pollutant === pollutant && r.normalizedUnit === a.primaryUnit && sharedStationSet.has(r.location)) {
+        sharedSumA += r.value;
+        sharedCountA++;
+        if (r.value > matchedMaxA) matchedMaxA = r.value;
+      }
+    }
 
-    const minShared = Math.min(sharedReadingsA.length, sharedReadingsB.length);
-    const maxShared = Math.max(sharedReadingsA.length, sharedReadingsB.length);
+    let sharedSumB = 0;
+    let sharedCountB = 0;
+    let matchedMaxB = -Infinity;
+    for (const r of periodB.analysis.validReadings) {
+      if (r.pollutant === pollutant && r.normalizedUnit === b.primaryUnit && sharedStationSet.has(r.location)) {
+        sharedSumB += r.value;
+        sharedCountB++;
+        if (r.value > matchedMaxB) matchedMaxB = r.value;
+      }
+    }
+
+    const minShared = Math.min(sharedCountA, sharedCountB);
+    const maxShared = Math.max(sharedCountA, sharedCountB);
     if (maxShared > 0 && minShared / maxShared < 0.35) {
       hasSampleImbalance = true;
     }
 
-    const matchedMeanA =
-      sharedReadingsA.reduce((s, r) => s + r.value, 0) / sharedReadingsA.length;
-    const matchedMeanB =
-      sharedReadingsB.reduce((s, r) => s + r.value, 0) / sharedReadingsB.length;
-    const matchedMaxA = Math.max(...sharedReadingsA.map((r) => r.value));
-    const matchedMaxB = Math.max(...sharedReadingsB.map((r) => r.value));
+    const matchedMeanA = sharedCountA > 0 ? sharedSumA / sharedCountA : 0;
+    const matchedMeanB = sharedCountB > 0 ? sharedSumB / sharedCountB : 0;
 
     const deltaAbs = roundTo(matchedMeanB - matchedMeanA, 2);
     const deltaPct = matchedMeanA !== 0 ? roundTo(((matchedMeanB - matchedMeanA) / matchedMeanA) * 100, 1) : null;
@@ -1129,9 +1164,12 @@ export function comparePeriods(
       direction = deltaAbs < 0 ? 'improved' : 'worsened';
     }
 
+    const locMapA = new Map(a.locationStats.map((l) => [l.location, l]));
+    const locMapB = new Map(b.locationStats.map((l) => [l.location, l]));
+
     const stationComparisons = sharedStations.map((location) => {
-      const stA = a.locationStats.find((l) => l.location === location)!;
-      const stB = b.locationStats.find((l) => l.location === location)!;
+      const stA = locMapA.get(location)!;
+      const stB = locMapB.get(location)!;
       if (stA.count < 2 || stB.count < 2) {
         return {
           location,
@@ -1167,8 +1205,8 @@ export function comparePeriods(
       nonComparableReason: null,
       unitA: a.primaryUnit,
       unitB: b.primaryUnit,
-      countA: sharedReadingsA.length,
-      countB: sharedReadingsB.length,
+      countA: sharedCountA,
+      countB: sharedCountB,
       overlappingStations: sharedStations,
       meanA: roundTo(matchedMeanA, 2),
       meanB: roundTo(matchedMeanB, 2),

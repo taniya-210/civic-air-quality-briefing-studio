@@ -14,6 +14,11 @@ function parseLine(line: string, delimiter: string): string[] {
     return line.trim().split(/\s{2,}/).map((s) => s.trim());
   }
 
+  // Fast path for unquoted lines (dominant case in civic telemetry CSVs)
+  if (!line.includes('"')) {
+    return line.split(delimiter).map((s) => s.trim());
+  }
+
   const fields: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -44,6 +49,18 @@ function parseLine(line: string, delimiter: string): string[] {
  * Splits multi-line delimited text into logical records while tracking 1-based physical line numbers.
  */
 function splitLogicalLines(text: string): { line: string; lineNumber: number }[] {
+  // Fast linear split when no quoted multi-line cells exist
+  if (!text.includes('"')) {
+    const rawLines = text.split(/\r\n|\n|\r/);
+    const result: { line: string; lineNumber: number }[] = [];
+    for (let i = 0; i < rawLines.length; i++) {
+      if (rawLines[i].trim().length > 0) {
+        result.push({ line: rawLines[i], lineNumber: i + 1 });
+      }
+    }
+    return result;
+  }
+
   const lines: { line: string; lineNumber: number }[] = [];
   let current = '';
   let inQuotes = false;

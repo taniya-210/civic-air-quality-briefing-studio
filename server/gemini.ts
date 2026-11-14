@@ -41,14 +41,19 @@ function getLanguageInstruction(language: BriefingLanguage): string {
   return 'Write ALL prose, headings, notices, and recommendations in crisp, plain, authoritative English.';
 }
 
+function sanitizePromptText(value: string | undefined | null, maxLen = 160): string {
+  if (!value) return '';
+  return value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+}
+
 function buildCompactEvidencePayload(analysis: AnalysisResult) {
   return {
-    periodLabel: analysis.periodLabel,
-    datasetName: analysis.datasetName,
+    periodLabel: sanitizePromptText(analysis.periodLabel, 160),
+    datasetName: sanitizePromptText(analysis.datasetName, 160),
     overallReliability: analysis.overallReliability,
     isPreliminaryAssessment: analysis.isPreliminary,
-    preliminarySummaryNote: analysis.preliminarySummaryNote,
-    reliabilityNotes: analysis.reliabilityNotes,
+    preliminarySummaryNote: sanitizePromptText(analysis.preliminarySummaryNote, 400),
+    reliabilityNotes: analysis.reliabilityNotes.map((n) => sanitizePromptText(n, 300)),
     qualityMetrics: {
       totalRawRows: analysis.qualityReport.totalRows,
       validRows: analysis.qualityReport.validRows,
@@ -62,14 +67,14 @@ function buildCompactEvidencePayload(analysis: AnalysisResult) {
       timeRangeStart: analysis.qualityReport.timeRangeStart,
       timeRangeEnd: analysis.qualityReport.timeRangeEnd,
       timeSpanHours: analysis.qualityReport.timeSpanHours,
-      stationsCovered: analysis.qualityReport.stations,
-      pollutantsCovered: analysis.qualityReport.pollutants,
+      stationsCovered: analysis.qualityReport.stations.slice(0, 50).map((s) => sanitizePromptText(s, 100)),
+      pollutantsCovered: analysis.qualityReport.pollutants.slice(0, 20).map((p) => sanitizePromptText(p, 40)),
     },
     pollutantSummaries: analysis.pollutantSummaries.map((p) => ({
-      pollutant: p.pollutant,
-      unit: p.primaryUnit,
+      pollutant: sanitizePromptText(p.pollutant, 40),
+      unit: sanitizePromptText(p.primaryUnit, 30),
       hasMixedUnits: p.hasMixedUnits,
-      unitWarning: p.unitWarning,
+      unitWarning: p.unitWarning ? sanitizePromptText(p.unitWarning, 300) : null,
       totalValidCount: p.totalCount,
       spanHours: p.spanHours,
       observedMean: p.mean,
@@ -79,9 +84,9 @@ function buildCompactEvidencePayload(analysis: AnalysisResult) {
       observedPeak: p.observedPeak
         ? {
             value: p.observedPeak.value,
-            unit: p.observedPeak.unit,
-            location: p.observedPeak.location,
-            timestamp: p.observedPeak.timestampRaw,
+            unit: sanitizePromptText(p.observedPeak.unit, 30),
+            location: sanitizePromptText(p.observedPeak.location, 100),
+            timestamp: sanitizePromptText(p.observedPeak.timestampRaw, 60),
             sourceRow: p.observedPeak.rowIndex,
           }
         : null,
@@ -144,6 +149,9 @@ export function mapGeminiError(error: unknown): { statusCode: number; code: stri
   if (errObj?.code === 'MISSING_API_KEY') {
     return { statusCode: 503, code: 'MISSING_API_KEY', message: rawMsg };
   }
+  if (errObj?.code === 'INVALID_AI_RESPONSE') {
+    return { statusCode: 502, code: 'INVALID_AI_RESPONSE', message: rawMsg };
+  }
   if (status === 403 || rawMsg.includes('PERMISSION_DENIED') || rawMsg.includes('API_KEY_INVALID')) {
     return {
       statusCode: 403,
@@ -177,8 +185,32 @@ export function mapGeminiError(error: unknown): { statusCode: number; code: stri
   return {
     statusCode: status >= 400 && status < 600 ? status : 500,
     code: 'GEMINI_API_ERROR',
-    message: rawMsg,
+    message: rawMsg.startsWith('{')
+      ? 'Unexpected error communicating with Gemini AI service. Please retry.'
+      : rawMsg,
   };
+}
+
+function parseStructuredAiJson<T>(rawText: string | undefined, contextLabel: string): T {
+  const trimmed = (rawText ?? '').trim();
+  if (!trimmed) {
+    const err = new Error(
+      `Gemini returned an empty response for ${contextLabel}. Please retry.`
+    ) as Error & { statusCode?: number; code?: string };
+    err.statusCode = 502;
+    err.code = 'INVALID_AI_RESPONSE';
+    throw err;
+  }
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    const err = new Error(
+      `Gemini returned malformed structured output for ${contextLabel}. Please retry.`
+    ) as Error & { statusCode?: number; code?: string };
+    err.statusCode = 502;
+    err.code = 'INVALID_AI_RESPONSE';
+    throw err;
+  }
 }
 
 function isTransientCapacityError(error: unknown): boolean {
@@ -387,12 +419,13 @@ export async function generateBriefingsWithGemini(
     },
   }));
 
-  const rawJson = (response.text ?? '').trim();
-  if (!rawJson) {
-    throw new Error('Gemini returned an empty response.');
-  }
-
-  const parsed = JSON.parse(rawJson);
+  const parsed = parseStructuredAiJson<{
+    groundingAudit?: { verifiedMetricsCited?: string[] };
+    wardOfficerBriefing: GeneratedBriefingPack['wardOfficerBriefing'];
+    housingSocietyAdvisory: GeneratedBriefingPack['housingSocietyAdvisory'];
+    schoolAdvisory: GeneratedBriefingPack['schoolAdvisory'];
+    vulnerableGroupAdvisories: GeneratedBriefingPack['vulnerableGroupAdvisories'];
+  }>(response.text, 'briefings');
 
   return {
     language,
@@ -400,7 +433,7 @@ export async function generateBriefingsWithGemini(
     generatedAtIso: new Date().toISOString(),
     modelUsed: MODEL_NAME,
     groundingAudit: {
-      datasetPeriod: analysis.periodLabel,
+      datasetPeriod: sanitizePromptText(analysis.periodLabel, 160),
       totalValidReadings: analysis.qualityReport.validRows,
       reliabilityStatus: analysis.overallReliability,
       verifiedMetricsCited: parsed.groundingAudit?.verifiedMetricsCited ?? [],
@@ -459,11 +492,13 @@ export async function generateComparisonBriefingWithGemini(
     })
   );
 
-  const rawJson = (response.text ?? '').trim();
-  if (!rawJson) {
-    throw new Error('Gemini returned an empty response for period comparison.');
-  }
-  const parsed = JSON.parse(rawJson);
+  const parsed = parseStructuredAiJson<{
+    headline: string;
+    verifiedChanges?: string[];
+    aiInterpretation?: string[];
+    uncomparableWarnings?: string[];
+    recommendedNextSteps?: string[];
+  }>(response.text, 'period comparison');
 
   return {
     generatedAtIso: new Date().toISOString(),
