@@ -656,11 +656,20 @@ export function validateAndAnalyzeTable(
 
   const unitsByPollutant: Record<string, string[]> = {};
   const pollutantUnitCounts = new Map<string, Map<string, number>>();
+  const readingsByPollutant = new Map<string, ValidatedReading[]>();
   for (const r of candidateValid) {
-    if (!pollutantUnitCounts.has(r.pollutant)) {
-      pollutantUnitCounts.set(r.pollutant, new Map());
+    let bucket = readingsByPollutant.get(r.pollutant);
+    if (!bucket) {
+      bucket = [];
+      readingsByPollutant.set(r.pollutant, bucket);
     }
-    const uMap = pollutantUnitCounts.get(r.pollutant)!;
+    bucket.push(r);
+
+    let uMap = pollutantUnitCounts.get(r.pollutant);
+    if (!uMap) {
+      uMap = new Map();
+      pollutantUnitCounts.set(r.pollutant, uMap);
+    }
     uMap.set(r.normalizedUnit, (uMap.get(r.normalizedUnit) ?? 0) + 1);
   }
 
@@ -671,8 +680,9 @@ export function validateAndAnalyzeTable(
     if (units.length > 1) {
       const sortedUnits = Array.from(uMap.entries()).sort((a, b) => b[1] - a[1]);
       const primaryUnit = sortedUnits[0][0];
-      for (const r of candidateValid) {
-        if (r.pollutant === pollutant && r.normalizedUnit !== primaryUnit) {
+      const pollutantReadings = readingsByPollutant.get(pollutant) ?? [];
+      for (const r of pollutantReadings) {
+        if (r.normalizedUnit !== primaryUnit) {
           unitInconsistencyCount++;
           r.warnings.push(
             `Unit mismatch: recorded in "${r.normalizedUnit}" while majority of ${pollutant} readings use "${primaryUnit}". Excluded from pooled ${pollutant} averages.`
@@ -747,17 +757,6 @@ export function validateAndAnalyzeTable(
         `${conflictingDuplicateCount} conflicting duplicate timestamp(s) found and excluded.`
       );
     }
-  }
-
-  // Single-pass index of valid readings by pollutant for O(N) summary computation
-  const readingsByPollutant = new Map<string, ValidatedReading[]>();
-  for (const r of candidateValid) {
-    let bucket = readingsByPollutant.get(r.pollutant);
-    if (!bucket) {
-      bucket = [];
-      readingsByPollutant.set(r.pollutant, bucket);
-    }
-    bucket.push(r);
   }
 
   const pollutantSummaries: PollutantSummary[] = pollutants.map((pollutant) => {

@@ -270,4 +270,98 @@ describe('airQualityEngine — validation, scientific accuracy & comparisons', (
     assert.equal(cmp.comparableCount, 1);
     assert.equal(cmp.pollutantComparisons[0].direction, 'worsened');
   });
+
+  it('produces exact results across single-unit, mixed-unit, multiple-pollutant, and large mixed-unit datasets', () => {
+    // 1) Single-unit multi-pollutant dataset
+    const singleCsv = [
+      'location,timestamp,pollutant,value,unit',
+      'Station A,2026-11-08 06:00,PM2.5,80,ug/m3',
+      'Station B,2026-11-08 06:00,PM2.5,120,ug/m3',
+      'Station A,2026-11-08 10:00,PM10,140,ug/m3',
+      'Station B,2026-11-08 10:00,PM10,180,ug/m3',
+      'Station A,2026-11-08 14:00,NO2,40,ug/m3',
+      'Station B,2026-11-08 14:00,NO2,60,ug/m3',
+    ].join('\n');
+    const singleTable = parseTabularText(singleCsv);
+    const singleRes = validateAndAnalyzeTable(singleTable, inferColumnMapping(singleTable.headers), {
+      periodLabel: 'Single Unit Multi Pollutant',
+      datasetName: 'single_multi.csv',
+    });
+
+    assert.equal(singleRes.qualityReport.validRows, 6);
+    assert.equal(singleRes.qualityReport.unitInconsistencyCount, 0);
+    assert.deepEqual(singleRes.qualityReport.pollutants, ['NO2', 'PM10', 'PM2.5']);
+    assert.equal(singleRes.pollutantSummaries.find((p) => p.pollutant === 'PM2.5')?.mean, 100);
+    assert.equal(singleRes.pollutantSummaries.find((p) => p.pollutant === 'PM10')?.mean, 160);
+    assert.equal(singleRes.pollutantSummaries.find((p) => p.pollutant === 'NO2')?.mean, 50);
+
+    // 2) Mixed-unit + multiple-pollutant dataset (majority unit preserved, minority quarantined)
+    const mixedCsv = [
+      'location,timestamp,pollutant,value,unit',
+      'Gate A,2026-11-08 06:00,PM2.5,60,ug/m3',
+      'Gate B,2026-11-08 06:00,PM2.5,90,ug/m3',
+      'Gate A,2026-11-08 10:00,PM2.5,120,ug/m3',
+      'Gate B,2026-11-08 10:00,PM2.5,0.15,mg/m3', // minority unit for PM2.5
+      'Gate A,2026-11-08 06:00,CO,1.2,mg/m3',
+      'Gate B,2026-11-08 06:00,CO,1.8,mg/m3',
+      'Gate A,2026-11-08 10:00,CO,2.4,mg/m3',
+      'Gate B,2026-11-08 10:00,CO,900,ppb', // minority unit for CO
+    ].join('\n');
+    const mixedTable = parseTabularText(mixedCsv);
+    const mixedRes = validateAndAnalyzeTable(mixedTable, inferColumnMapping(mixedTable.headers), {
+      periodLabel: 'Mixed Unit Multi Pollutant',
+      datasetName: 'mixed_multi.csv',
+    });
+
+    assert.equal(mixedRes.qualityReport.validRows, 8);
+    assert.equal(mixedRes.qualityReport.unitInconsistencyCount, 2);
+    assert.deepEqual(mixedRes.qualityReport.unitsByPollutant['PM2.5'], ['µg/m³', 'mg/m³']);
+    assert.deepEqual(mixedRes.qualityReport.unitsByPollutant['CO'], ['mg/m³', 'ppb']);
+
+    const mixedPm25 = mixedRes.pollutantSummaries.find((p) => p.pollutant === 'PM2.5')!;
+    assert.equal(mixedPm25.primaryUnit, 'µg/m³');
+    assert.equal(mixedPm25.hasMixedUnits, true);
+    assert.equal(mixedPm25.excludedUnitRowCount, 1);
+    assert.equal(mixedPm25.mean, 90);
+    assert.ok(mixedPm25.unitWarning?.includes('3 in µg/m³, 1 in mg/m³'));
+
+    const mixedCo = mixedRes.pollutantSummaries.find((p) => p.pollutant === 'CO')!;
+    assert.equal(mixedCo.primaryUnit, 'mg/m³');
+    assert.equal(mixedCo.hasMixedUnits, true);
+    assert.equal(mixedCo.excludedUnitRowCount, 1);
+    assert.equal(mixedCo.mean, 1.8);
+
+    const flaggedWarnings = mixedRes.validReadings.filter((r) => r.warnings.length > 0);
+    assert.equal(flaggedWarnings.length, 2);
+    assert.ok(flaggedWarnings.every((r) => r.warnings[0].includes('Unit mismatch')));
+
+    // 3) Large multi-pollutant dataset with mixed units across all pollutants
+    const largeLines = ['location,timestamp,pollutant,value,unit'];
+    const largePollutants = ['PM2.5', 'PM10', 'NO2', 'SO2', 'O3'];
+    for (let i = 0; i < 12000; i++) {
+      const p = largePollutants[i % largePollutants.length];
+      const unit = Math.floor(i / largePollutants.length) % 15 === 0 ? 'ppb' : 'ug/m3';
+      const day = 1 + (Math.floor(i / 480) % 28);
+      const hour = Math.floor((i % 480) / 20);
+      const min = (i % 20) * 3;
+      largeLines.push(
+        `Station_${i % 4},2026-11-${String(day).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')},${p},${50 + (i % 30)},${unit}`
+      );
+    }
+    const largeTable = parseTabularText(largeLines.join('\n'));
+    const largeRes = validateAndAnalyzeTable(largeTable, inferColumnMapping(largeTable.headers), {
+      periodLabel: 'Large Multi Pollutant Mixed',
+      datasetName: 'large_mixed.csv',
+    });
+
+    assert.equal(largeRes.qualityReport.validRows, 12000);
+    assert.equal(largeRes.qualityReport.unitInconsistencyCount, 800); // 12000 / 15
+    assert.equal(largeRes.pollutantSummaries.length, 5);
+    for (const s of largeRes.pollutantSummaries) {
+      assert.equal(s.primaryUnit, 'µg/m³');
+      assert.equal(s.hasMixedUnits, true);
+      assert.equal(s.totalCount + s.excludedUnitRowCount, 2400);
+      assert.equal(s.excludedUnitRowCount, 160);
+    }
+  });
 });
