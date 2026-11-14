@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import {
-  generateBriefingsWithGemini,
+  generateBriefingsWithFallback,
   generateComparisonBriefingWithGemini,
   mapGeminiError,
 } from './gemini';
@@ -8,6 +8,7 @@ import { deleteSavedPeriod, listSavedPeriods, savePeriodRecord } from './storage
 import type {
   AnalysisResult,
   BriefingLanguage,
+  GeneratedBriefingPack,
   PeriodComparisonResult,
   ReadingLevel,
   SavedPeriodRecord,
@@ -65,7 +66,14 @@ function isValidSavedPeriodPayload(record: unknown): record is SavedPeriodRecord
   return true;
 }
 
-export function createApp(options?: { disableRateLimit?: boolean }) {
+export function createApp(options?: {
+  disableRateLimit?: boolean;
+  generateBriefings?: (
+    analysis: AnalysisResult,
+    language: BriefingLanguage,
+    readingLevel: ReadingLevel
+  ) => Promise<GeneratedBriefingPack>;
+}) {
   const app = express();
   app.disable('x-powered-by');
 
@@ -212,8 +220,16 @@ export function createApp(options?: { disableRateLimit?: boolean }) {
         language === 'hi' ? 'hi' : language === 'mr' ? 'mr' : 'en';
       const validLevel: ReadingLevel = readingLevel === 'simple' ? 'simple' : 'detailed';
 
-      const pack = await generateBriefingsWithGemini(analysis, validLang, validLevel);
-      res.json({ briefingPack: pack });
+      const { briefingPack, liveAiError } = await generateBriefingsWithFallback(
+        analysis,
+        validLang,
+        validLevel,
+        options?.generateBriefings
+      );
+      res.json({
+        briefingPack,
+        ...(liveAiError ? { liveAiError } : {}),
+      });
     } catch (error) {
       const mapped = mapGeminiError(error);
       res.status(mapped.statusCode).json({
@@ -255,6 +271,23 @@ export function createApp(options?: { disableRateLimit?: boolean }) {
         code: mapped.code,
       });
     }
+  });
+
+  // Never let unmatched /api requests fall through to Vite/SPA HTML fallback
+  app.use('/api', (_req, res) => {
+    res.status(404).json({
+      error: 'API endpoint not found.',
+      code: 'API_ROUTE_NOT_FOUND',
+    });
+  });
+
+  // Catch-all JSON error handler for /api routes
+  app.use('/api', (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    const mapped = mapGeminiError(err);
+    res.status(mapped.statusCode).json({
+      error: mapped.message || 'Unexpected server error.',
+      code: mapped.code || 'INTERNAL_SERVER_ERROR',
+    });
   });
 
   return app;

@@ -18,9 +18,9 @@ export function OverviewView({
 }: OverviewViewProps) {
   if (!analysis) {
     return (
-      <div className="space-y-6">
-        <div className="bg-white border border-slate-200 rounded-xl p-8 lg:p-10">
-          <div className="max-w-2xl space-y-4">
+      <div className="space-y-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6">
+          <div className="max-w-2xl space-y-3">
             <div className="text-xs font-medium text-teal-800">
               Evidence-Grounded Environmental Briefing Workflow
             </div>
@@ -33,11 +33,11 @@ export function OverviewView({
               averages, trends, observed peaks, and 24-hour averages (when hourly density allows)—and
               before Gemini drafts briefings for ward officers, housing societies, and schools.
             </p>
-            <div className="pt-2 flex flex-wrap items-center gap-3">
+            <div className="pt-1 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => onNavigate('upload')}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
               >
                 <Upload className="w-4 h-4" />
                 Upload or Paste Data
@@ -45,7 +45,7 @@ export function OverviewView({
               <button
                 type="button"
                 onClick={onLoadDefaultSample}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-800 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200/70 transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-800 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200/70 transition-colors whitespace-nowrap shrink-0"
               >
                 <FileSpreadsheet className="w-4 h-4" />
                 Load Ward 14 Sample CSV
@@ -53,7 +53,7 @@ export function OverviewView({
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+          <div className="mt-5 pt-5 border-t border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-4 items-start text-sm">
             <div className="space-y-1">
               <div className="font-semibold text-slate-900">1. Strict Row Validation</div>
               <p className="text-xs text-slate-600 leading-relaxed">
@@ -89,7 +89,7 @@ export function OverviewView({
   const topHotspot = primaryPollutant?.hotspots[0];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <ReliabilityBanner
         status={analysis.overallReliability}
         reasons={analysis.reliabilityNotes}
@@ -97,8 +97,8 @@ export function OverviewView({
       />
 
       {/* 4-column KPI strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 items-start">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-1">
           <div className="text-xs font-medium text-slate-500">Validated Readings</div>
           <div className="font-mono tabular-nums text-2xl font-bold text-slate-900">
             {analysis.qualityReport.validRows}
@@ -113,7 +113,7 @@ export function OverviewView({
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-1.5">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-1">
           <div className="text-xs font-medium text-slate-500">Monitoring Coverage</div>
           <div className="font-mono tabular-nums text-2xl font-bold text-slate-900">
             {analysis.qualityReport.stations.length} Stations
@@ -124,7 +124,7 @@ export function OverviewView({
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-1.5">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-1">
           <div className="text-xs font-medium text-slate-500">
             {primaryPollutant
               ? `${primaryPollutant.pollutant} Observed Mean / Peak`
@@ -158,7 +158,7 @@ export function OverviewView({
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-1.5">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-1">
           <div className="text-xs font-medium text-slate-500">Highest Observed Mean Location</div>
           <div className="text-lg font-bold text-slate-900 truncate" title={topHotspot?.location}>
             {topHotspot ? topHotspot.location : 'Insufficient data'}
@@ -175,8 +175,8 @@ export function OverviewView({
 
       {/* Main Chart + Action Hub */}
       {primaryPollutant && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+          <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="font-display text-base font-semibold text-slate-900">
@@ -204,8 +204,8 @@ export function OverviewView({
             />
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between space-y-5">
-            <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+            <div className="space-y-3">
               <div>
                 <h2 className="font-display text-base font-semibold text-slate-900">
                   Station Comparison
@@ -221,10 +221,12 @@ export function OverviewView({
               />
             </div>
 
-            <div className="pt-4 border-t border-slate-200 space-y-2.5">
+            <div className="pt-3 border-t border-slate-200 space-y-2">
               <div className="text-xs text-slate-600">
                 {activeBriefing
-                  ? `Briefings ready (${activeBriefing.language.toUpperCase()} · ${activeBriefing.readingLevel})`
+                  ? `Briefings ready (${activeBriefing.language.toUpperCase()} · ${activeBriefing.readingLevel} · ${
+                      activeBriefing.source === 'demo_template' ? 'Demo / Template' : 'Gemini AI'
+                    })`
                   : 'Generate evidence-grounded Gemini briefings from these validated numbers.'}
               </div>
               <div className="flex flex-wrap gap-2">

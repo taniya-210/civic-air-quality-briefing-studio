@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { comparePeriods } from '../lib/airQualityEngine';
+import { readApiJson } from '../lib/apiClient';
 import type {
   AnalysisResult,
   BriefingLanguage,
@@ -144,13 +145,13 @@ export function ComparisonView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comparison, language }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate comparative summary.');
-      }
+      const data = await readApiJson<{ comparisonBriefing: ComparativeBriefingResponse }>(
+        res,
+        'Failed to generate comparative summary.'
+      );
       setAiComparisonCache((prev) => ({
         ...prev,
-        [compareCacheKey]: data.comparisonBriefing as ComparativeBriefingResponse,
+        [compareCacheKey]: data.comparisonBriefing,
       }));
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Unable to reach Gemini service.');
@@ -161,9 +162,9 @@ export function ComparisonView({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Save Active Analysis Box */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
         <div>
           <h2 className="font-display text-base font-semibold text-slate-900">
             Save Reporting Period to Archive
@@ -220,7 +221,7 @@ export function ComparisonView({
       </div>
 
       {/* Saved Periods List */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
         <h3 className="font-display text-base font-semibold text-slate-900">
           Saved Reporting Periods ({savedPeriods.length})
         </h3>
@@ -254,19 +255,19 @@ export function ComparisonView({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {savedPeriods.map((rec) => (
-                  <tr key={rec.id} className="hover:bg-slate-50/70">
-                    <td className="px-3 py-2.5 font-semibold text-slate-900">{rec.periodLabel}</td>
-                    <td className="px-3 py-2.5 font-mono text-slate-600">{rec.datasetName}</td>
-                    <td className="px-3 py-2.5 font-mono tabular-nums text-right text-slate-800">
+                  <tr key={rec.id} className="hover:bg-slate-50/70 align-top">
+                    <td className="px-3 py-1.5 font-semibold text-slate-900 align-top">{rec.periodLabel}</td>
+                    <td className="px-3 py-1.5 font-mono text-slate-600 align-top">{rec.datasetName}</td>
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-right text-slate-800 align-top">
                       {rec.analysis.qualityReport.validRows}
                     </td>
-                    <td className="px-3 py-2.5 text-slate-600">
+                    <td className="px-3 py-1.5 text-slate-600 align-top">
                       {rec.analysis.qualityReport.stations.length} stations
                     </td>
-                    <td className="px-3 py-2.5 capitalize text-slate-700">
+                    <td className="px-3 py-1.5 capitalize text-slate-700 align-top">
                       {rec.analysis.overallReliability}
                     </td>
-                    <td className="px-3 py-2.5 text-right">
+                    <td className="px-3 py-1.5 text-right align-top">
                       <button
                         type="button"
                         onClick={() => handleDelete(rec.id)}
@@ -287,8 +288,8 @@ export function ComparisonView({
 
       {/* Period Selector & Strict Comparison */}
       {selectablePeriods.length >= 2 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <div>
               <label htmlFor="baseline-period-select" className="block text-xs font-medium text-slate-700 mb-1">
                 Baseline Period (Period A)
@@ -410,7 +411,7 @@ export function ComparisonView({
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start text-xs">
                           <div className="bg-slate-50 rounded-lg p-3">
                             <div className="text-slate-500 truncate">{comparison.periodALabel}</div>
                             <div className="font-mono tabular-nums text-base font-bold text-slate-900 mt-0.5">
@@ -436,31 +437,31 @@ export function ComparisonView({
                             <table className="w-full text-left border-collapse text-xs">
                               <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                                  <th className="px-3 py-2 font-medium">Shared Station</th>
-                                  <th className="px-3 py-2 font-mono font-medium text-right">
+                                  <th className="px-3 py-2 font-medium align-top">Shared Station</th>
+                                  <th className="px-3 py-2 font-mono font-medium text-right align-top">
                                     Period A Mean
                                   </th>
-                                  <th className="px-3 py-2 font-mono font-medium text-right">
+                                  <th className="px-3 py-2 font-mono font-medium text-right align-top">
                                     Period B Mean
                                   </th>
-                                  <th className="px-3 py-2 font-mono font-medium text-right">
+                                  <th className="px-3 py-2 font-mono font-medium text-right align-top">
                                     Delta
                                   </th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
                                 {item.stationComparisons.map((st) => (
-                                  <tr key={st.location}>
-                                    <td className="px-3 py-2 font-medium text-slate-900">
+                                  <tr key={st.location} className="align-top">
+                                    <td className="px-3 py-1.5 font-medium text-slate-900 align-top">
                                       {st.location}
                                     </td>
-                                    <td className="px-3 py-2 font-mono tabular-nums text-right text-slate-700">
+                                    <td className="px-3 py-1.5 font-mono tabular-nums text-right text-slate-700 align-top">
                                       {st.meanA} (n={st.countA})
                                     </td>
-                                    <td className="px-3 py-2 font-mono tabular-nums text-right text-slate-700">
+                                    <td className="px-3 py-1.5 font-mono tabular-nums text-right text-slate-700 align-top">
                                       {st.meanB} (n={st.countB})
                                     </td>
-                                    <td className="px-3 py-2 font-mono tabular-nums text-right">
+                                    <td className="px-3 py-1.5 font-mono tabular-nums text-right align-top">
                                       {st.comparable && st.deltaAbs !== null ? (
                                         <span
                                           className={
@@ -572,11 +573,11 @@ export function ComparisonView({
                 )}
 
                 {aiComparison && (
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
                     <div className="font-display text-base font-bold text-slate-900">
                       {aiComparison.headline}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start text-xs">
                       <div className="space-y-1.5">
                         <div className="font-semibold text-emerald-800">Verified Changes</div>
                         <ul className="space-y-1 text-slate-700">

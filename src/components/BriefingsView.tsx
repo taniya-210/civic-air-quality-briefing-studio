@@ -18,6 +18,8 @@ import type {
   ReadingLevel,
 } from '../types/airQuality';
 import { LANG_LABELS, LANG_SHORT_LABELS } from '../lib/constants';
+import { formatWardBriefingCopyText } from '../lib/demoBriefingFallback';
+import { FallbackNoticeBanner } from './FallbackNoticeBanner';
 import { ReliabilityBanner } from './ReliabilityBanner';
 
 interface BriefingsViewProps {
@@ -50,7 +52,7 @@ export function BriefingsView({
 
   if (!analysis) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 text-center space-y-2.5">
         <div className="font-display text-base font-semibold text-slate-900">
           Upload &amp; Validate Data Before Generating Briefings
         </div>
@@ -71,39 +73,7 @@ export function BriefingsView({
 
   const handleCopyBriefing = async () => {
     if (!briefingPack) return;
-    const b = briefingPack.wardOfficerBriefing;
-    const v = briefingPack.vulnerableGroupAdvisories;
-    const text = [
-      b.title,
-      `Period: ${analysis.periodLabel} | Language: ${LANG_LABELS[briefingPack.language]} | Level: ${briefingPack.readingLevel}`,
-      '',
-      'EXECUTIVE SUMMARY',
-      b.executiveSummary,
-      '',
-      'MEASURED FACTS (VERIFIED TELEMETRY)',
-      ...b.measuredFacts.map((m) => `- ${m}`),
-      '',
-      'AI INTERPRETATIONS (ANALYTICAL HYPOTHESES)',
-      ...b.aiInterpretations.map((i) => `- ${i}`),
-      '',
-      'HOTSPOT PRIORITIES',
-      ...b.hotspotPriorities.map(
-        (h) => `- ${h.location} [${h.priorityLevel}]: ${h.action} (Evidence: ${h.evidence})`
-      ),
-      '',
-      'RECOMMENDATIONS',
-      ...b.recommendations.map(
-        (r) => `- ${r.action} — ${r.rationale} (Metric: ${r.linkedMetric})`
-      ),
-      '',
-      'VULNERABLE GROUP OUTREACH',
-      `- ${v.children.groupName}: ${v.children.riskSummary} (${v.children.linkedEvidence})`,
-      `- ${v.olderAdults.groupName}: ${v.olderAdults.riskSummary} (${v.olderAdults.linkedEvidence})`,
-      `- ${v.sensitiveIndividuals.groupName}: ${v.sensitiveIndividuals.riskSummary} (${v.sensitiveIndividuals.linkedEvidence})`,
-      '',
-      'DATA LIMITATIONS & CAVEATS',
-      ...b.dataCaveats.map((c) => `- ${c}`),
-    ].join('\n');
+    const text = formatWardBriefingCopyText(briefingPack, analysis);
 
     try {
       await navigator.clipboard.writeText(text);
@@ -117,10 +87,10 @@ export function BriefingsView({
   const zeroValid = analysis.qualityReport.validRows === 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Controls Bar */}
-      <div className="no-print bg-white border border-slate-200 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
+      <div className="no-print bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
           <h2 className="font-display text-base font-semibold text-slate-900">
             Ward Officer Internal Briefing Generator
           </h2>
@@ -234,21 +204,21 @@ export function BriefingsView({
         <div
           role="status"
           aria-busy="true"
-          className="bg-white border border-slate-200 rounded-xl p-8 space-y-4"
+          className="bg-white border border-slate-200 rounded-xl p-5 space-y-3"
         >
           <span className="sr-only">Generating evidence-grounded briefings from validated metrics...</span>
           <div className="h-5 w-2/3 bg-slate-200 rounded animate-pulse" />
           <div className="h-4 w-full bg-slate-100 rounded animate-pulse" />
           <div className="h-4 w-5/6 bg-slate-100 rounded animate-pulse" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-            <div className="h-32 bg-slate-100 rounded-lg animate-pulse" />
-            <div className="h-32 bg-slate-100 rounded-lg animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+            <div className="h-24 bg-slate-100 rounded-lg animate-pulse" />
+            <div className="h-24 bg-slate-100 rounded-lg animate-pulse" />
           </div>
         </div>
       )}
 
       {!isGenerating && !briefingPack && !error && (
-        <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 text-center space-y-2">
           <div className="font-display text-base font-semibold text-slate-900">
             Ready to Draft Evidence-Grounded Civic Briefings
           </div>
@@ -261,22 +231,32 @@ export function BriefingsView({
       )}
 
       {!isGenerating && briefingPack && (
-        <div className="space-y-6">
+        <div className="space-y-4">
+          <FallbackNoticeBanner
+            briefingPack={briefingPack}
+            isGenerating={isGenerating}
+            onRetryLiveAi={() => onGenerate(language, readingLevel)}
+          />
+
           {/* Header & Export */}
-          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
-            <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-slate-200">
-              <div className="space-y-1">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-200">
+              <div className="space-y-1 min-w-0">
                 <div className="text-xs text-slate-500">
-                  Ward Officer Internal Briefing · {LANG_LABELS[briefingPack.language]} ·{' '}
+                  Ward Officer Internal Briefing ·{' '}
+                  {briefingPack.source === 'demo_template'
+                    ? 'Demo / Template Briefing'
+                    : `Live Gemini AI (${briefingPack.modelUsed})`}{' '}
+                  · {LANG_LABELS[briefingPack.language]} ·{' '}
                   {briefingPack.readingLevel === 'simple' ? 'Simple level' : 'Detailed level'} ·
                   Generated {new Date(briefingPack.generatedAtIso).toLocaleTimeString()}
                 </div>
-                <h3 className="font-display text-xl font-bold text-slate-900">
+                <h3 className="font-display text-lg sm:text-xl font-bold text-slate-900">
                   {briefingPack.wardOfficerBriefing.title}
                 </h3>
               </div>
 
-              <div className="no-print flex items-center gap-2">
+              <div className="no-print flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={handleCopyBriefing}
@@ -306,8 +286,8 @@ export function BriefingsView({
           </div>
 
           {/* Explicit Separation: Measured Facts vs AI Interpretations */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2.5">
               <div>
                 <div className="text-xs font-semibold text-emerald-800">
                   Measured Facts (Verified Telemetry)
@@ -316,28 +296,31 @@ export function BriefingsView({
                   Direct figures derived from validated monitoring records
                 </p>
               </div>
-              <ul className="space-y-2 text-sm text-slate-800">
+              <ul className="space-y-1.5 text-sm text-slate-800">
                 {briefingPack.wardOfficerBriefing.measuredFacts.map((fact, idx) => (
-                  <li key={idx} className="pb-2 border-b border-slate-100 last:border-0 last:pb-0">
+                  <li key={idx} className="pb-1.5 border-b border-slate-100 last:border-0 last:pb-0 leading-relaxed">
                     {fact}
                   </li>
                 ))}
               </ul>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2.5">
               <div>
                 <div className="text-xs font-semibold text-teal-900">
-                  AI Interpretations &amp; Operational Context
+                  {briefingPack.source === 'demo_template'
+                    ? 'Template Interpretations & Operational Context'
+                    : 'AI Interpretations & Operational Context'}
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Analytical synthesis generated by {briefingPack.modelUsed} — verify local site
-                  conditions before enforcement
+                  {briefingPack.source === 'demo_template'
+                    ? 'Deterministic local interpretation from validated metrics (Demo / Template mode) — verify local site conditions before enforcement'
+                    : `Analytical synthesis generated by ${briefingPack.modelUsed} — verify local site conditions before enforcement`}
                 </p>
               </div>
-              <ul className="space-y-2 text-sm text-slate-800">
+              <ul className="space-y-1.5 text-sm text-slate-800">
                 {briefingPack.wardOfficerBriefing.aiInterpretations.map((item, idx) => (
-                  <li key={idx} className="pb-2 border-b border-slate-200/70 last:border-0 last:pb-0">
+                  <li key={idx} className="pb-1.5 border-b border-slate-200/70 last:border-0 last:pb-0 leading-relaxed">
                     {item}
                   </li>
                 ))}
@@ -346,7 +329,7 @@ export function BriefingsView({
           </div>
 
           {/* Hotspot Priorities */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
             <h4 className="font-display text-base font-semibold text-slate-900">
               Hotspot Inspection Priorities
             </h4>
@@ -354,23 +337,25 @@ export function BriefingsView({
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                    <th className="px-3 py-2.5 font-medium">Location</th>
-                    <th className="px-3 py-2.5 font-medium">Priority</th>
-                    <th className="px-3 py-2.5 font-medium">Recommended Field Action</th>
-                    <th className="px-3 py-2.5 font-medium">Measured Evidence</th>
+                    <th scope="col" className="px-3 py-2 font-medium align-top">Location</th>
+                    <th scope="col" className="px-3 py-2 font-medium align-top">Priority</th>
+                    <th scope="col" className="px-3 py-2 font-medium align-top">Recommended Field Action</th>
+                    <th scope="col" className="px-3 py-2 font-medium align-top">Measured Evidence</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {briefingPack.wardOfficerBriefing.hotspotPriorities.map((item, idx) => (
                     <tr key={idx} className="align-top">
-                      <td className="px-3 py-2.5 font-semibold text-slate-900 whitespace-nowrap">
+                      <td className="px-3 py-2 font-semibold text-slate-900 align-top break-words">
                         {item.location}
                       </td>
-                      <td className="px-3 py-2.5 font-medium text-slate-800 whitespace-nowrap">
+                      <td className="px-3 py-2 font-medium text-slate-800 align-top break-words">
                         {item.priorityLevel}
                       </td>
-                      <td className="px-3 py-2.5 text-slate-700 leading-relaxed">{item.action}</td>
-                      <td className="px-3 py-2.5 font-mono text-[11px] text-slate-600">
+                      <td className="px-3 py-2 text-slate-700 leading-relaxed align-top">
+                        {item.action}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-[11px] text-slate-600 leading-relaxed align-top break-words">
                         {item.evidence}
                       </td>
                     </tr>
@@ -381,14 +366,14 @@ export function BriefingsView({
           </div>
 
           {/* Recommendations & Caveats */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+            <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-4 space-y-2.5">
               <h4 className="font-display text-base font-semibold text-slate-900">
                 Evidence-Based Recommendations
               </h4>
               <div className="divide-y divide-slate-100">
                 {briefingPack.wardOfficerBriefing.recommendations.map((rec, idx) => (
-                  <div key={idx} className="py-3 first:pt-0 last:pb-0 space-y-1">
+                  <div key={idx} className="py-2 first:pt-0 last:pb-0 space-y-1">
                     <div className="text-sm font-semibold text-slate-900">{rec.action}</div>
                     <p className="text-xs text-slate-600 leading-relaxed">{rec.rationale}</p>
                     <div className="text-[11px] font-mono text-teal-800">
@@ -399,11 +384,11 @@ export function BriefingsView({
               </div>
             </div>
 
-            <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-5 space-y-3">
+            <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-4 space-y-2">
               <h4 className="font-display text-sm font-semibold text-amber-950">
                 Data Limitations &amp; Caveats
               </h4>
-              <ul className="space-y-2 text-xs text-amber-900 leading-relaxed">
+              <ul className="space-y-1.5 text-xs text-amber-900 leading-relaxed">
                 {briefingPack.wardOfficerBriefing.dataCaveats.map((c, idx) => (
                   <li key={idx}>• {c}</li>
                 ))}
@@ -412,7 +397,7 @@ export function BriefingsView({
           </div>
 
           {/* Traceability Verification Panel */}
-          <div className="no-print bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+          <div className="no-print bg-white border border-slate-200 rounded-xl p-4 space-y-2.5">
             <button
               type="button"
               aria-expanded={showTraceability}
@@ -436,8 +421,8 @@ export function BriefingsView({
             </button>
 
             {showTraceability && (
-              <div className="pt-3 border-t border-slate-200 space-y-3 text-xs">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="pt-2.5 border-t border-slate-200 space-y-2.5 text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
                   {analysis.pollutantSummaries.map((p) => (
                     <div key={p.pollutant} className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1">
                       <div className="font-semibold text-slate-900">

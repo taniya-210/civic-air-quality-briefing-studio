@@ -2,9 +2,15 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
-import { generateBriefingsWithGemini, mapGeminiError } from '../server/gemini';
+import {
+  generateBriefingsWithGemini,
+  mapGeminiError,
+  parseStructuredAiJson,
+  verifyJsonUpstreamResponse,
+} from '../server/gemini';
 import { deleteSavedPeriod, listSavedPeriods, savePeriodRecord } from '../server/storage';
 import { validateAndAnalyzeTable } from '../src/lib/airQualityEngine';
+import { readApiJson } from '../src/lib/apiClient';
 import { inferColumnMapping, parseTabularText } from '../src/lib/csvParser';
 import { SAMPLE_DATASETS } from '../src/lib/sampleDatasets';
 import type { SavedPeriodRecord } from '../src/types/airQuality';
@@ -61,6 +67,63 @@ describe('API error handling, server security, rate limiting & period persistenc
     assert.equal(mappedFallback.statusCode, 500);
     assert.equal(mappedFallback.code, 'GEMINI_API_ERROR');
     assert.equal(mappedFallback.message.startsWith('{'), false);
+
+    const htmlError = Object.assign(new Error('<!doctype html><html><body>502 Bad Gateway</body></html>'), {
+      status: 502,
+    });
+    const mappedHtml = mapGeminiError(htmlError);
+    assert.equal(mappedHtml.statusCode, 502);
+    assert.equal(mappedHtml.code, 'UPSTREAM_HTML_RESPONSE');
+    assert.equal(mappedHtml.message.includes('<!doctype'), false);
+  });
+
+  it('inspects HTTP status, content-type, and HTML/non-JSON bodies safely before JSON.parse', async () => {
+    const htmlUpstream = new Response('<!doctype html><html><body>Error</body></html>', {
+      status: 502,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
+    await assert.rejects(
+      () => verifyJsonUpstreamResponse(htmlUpstream),
+      (err: unknown) => {
+        const mapped = mapGeminiError(err);
+        assert.equal(mapped.statusCode, 502);
+        assert.equal(mapped.code, 'UPSTREAM_HTML_RESPONSE');
+        assert.ok(mapped.message.includes('HTML page'));
+        return true;
+      }
+    );
+
+    const nonJsonOk = new Response('plain text upstream output', {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+    await assert.rejects(
+      () => verifyJsonUpstreamResponse(nonJsonOk),
+      (err: unknown) => {
+        const mapped = mapGeminiError(err);
+        assert.equal(mapped.statusCode, 502);
+        assert.equal(mapped.code, 'INVALID_AI_RESPONSE');
+        return true;
+      }
+    );
+
+    assert.throws(
+      () => parseStructuredAiJson('<!doctype html><html></html>', 'briefings'),
+      (err: unknown) => {
+        const mapped = mapGeminiError(err);
+        assert.equal(mapped.code, 'UPSTREAM_HTML_RESPONSE');
+        return true;
+      }
+    );
+
+    const clientHtmlRes = new Response('<!doctype html><html><body>SPA</body></html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    });
+    await assert.rejects(
+      () => readApiJson(clientHtmlRes, 'Failed to generate AI briefing.'),
+      /HTML page \(HTTP 200\) instead of JSON/
+    );
   });
 
   it('rejects briefing generation with 503 MISSING_API_KEY when GEMINI_API_KEY is absent', async () => {
@@ -186,6 +249,12 @@ describe('API error handling, server security, rate limiting & period persistenc
       assert.equal(delRes.status, 200);
       const delData = await delRes.json();
       assert.ok(!delData.periods.some((p: SavedPeriodRecord) => p.id === testId));
+
+      // 6. Unmatched /api route returns structured 404 JSON instead of falling through to HTML
+      const missingApiRes = await fetch(`${srv.baseUrl}/api/nonexistent-endpoint`);
+      assert.equal(missingApiRes.status, 404);
+      assert.ok((missingApiRes.headers.get('content-type') || '').includes('application/json'));
+      assert.equal((await missingApiRes.json()).code, 'API_ROUTE_NOT_FOUND');
     } finally {
       await deleteSavedPeriod(testId);
       await srv.close();

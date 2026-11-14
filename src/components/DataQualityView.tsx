@@ -46,7 +46,7 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
 
   if (!analysis) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 text-center space-y-2.5">
         <div className="font-display text-base font-semibold text-slate-900">
           No Data Quality Report Available
         </div>
@@ -75,51 +75,51 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
   const pageValid = filteredValid.slice(startIdx, startIdx + ROWS_PER_PAGE);
 
   return (
-    <div className="space-y-6">
-      <ReliabilityBanner status={qr.reliabilityStatus} reasons={qr.reliabilityReasons} />
+    <div className="space-y-4">
+      <ReliabilityBanner status={qr.reliabilityStatus} reasons={qr.reliabilityReasons} compact />
 
       {/* Audit Counters */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 items-start">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500">Total Raw Rows</div>
-          <div className="font-mono tabular-nums text-xl font-bold text-slate-900 mt-1">
+          <div className="font-mono tabular-nums text-xl font-bold text-slate-900 mt-0.5">
             {qr.totalRows}
           </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500">Valid Readings</div>
-          <div className="font-mono tabular-nums text-xl font-bold text-emerald-700 mt-1">
+          <div className="font-mono tabular-nums text-xl font-bold text-emerald-700 mt-0.5">
             {qr.validRows}
           </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500">Flagged / Excluded</div>
-          <div className="font-mono tabular-nums text-xl font-bold text-red-700 mt-1">
+          <div className="font-mono tabular-nums text-xl font-bold text-red-700 mt-0.5">
             {qr.flaggedRowsCount}
           </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500">Duplicates</div>
-          <div className="font-mono tabular-nums text-xl font-bold text-slate-900 mt-1">
+          <div className="font-mono tabular-nums text-xl font-bold text-slate-900 mt-0.5">
             {qr.duplicateCount + qr.conflictingDuplicateCount}
           </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500">Missing / Invalid</div>
-          <div className="font-mono tabular-nums text-xl font-bold text-slate-900 mt-1">
+          <div className="font-mono tabular-nums text-xl font-bold text-slate-900 mt-0.5">
             {qr.missingFieldCount + qr.invalidValueCount + qr.invalidTimestampCount + qr.outlierCount}
           </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500">Unit Mismatches</div>
-          <div className="font-mono tabular-nums text-xl font-bold text-amber-700 mt-1">
+          <div className="font-mono tabular-nums text-xl font-bold text-amber-700 mt-0.5">
             {qr.unitInconsistencyCount}
           </div>
         </div>
       </div>
 
       {/* Coverage & Unit Summary */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-start text-xs">
         <div className="space-y-1">
           <div className="font-semibold text-slate-900">Time Window</div>
           <div className="font-mono tabular-nums text-slate-600">
@@ -154,7 +154,7 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
       </div>
 
       {/* Row-by-row Inspector */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div role="tablist" aria-label="Row audit filter" className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
             <button
@@ -206,7 +206,7 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
 
         {tab === 'flagged' ? (
           filteredFlagged.length === 0 ? (
-            <div className="py-10 text-center space-y-2">
+            <div className="py-6 text-center space-y-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-700 mx-auto" aria-hidden="true" />
               <div className="text-sm font-medium text-slate-900">
                 {qr.flaggedRowsCount === 0
@@ -219,18 +219,18 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                    <th scope="col" className="px-3 py-2.5 font-mono font-medium">Row</th>
-                    <th scope="col" className="px-3 py-2.5 font-medium">Validation Issue(s)</th>
-                    <th scope="col" className="px-3 py-2.5 font-mono font-medium">Raw Record</th>
+                    <th scope="col" className="px-3 py-2 font-mono font-medium align-top">Row</th>
+                    <th scope="col" className="px-3 py-2 font-medium align-top">Validation Issue(s)</th>
+                    <th scope="col" className="px-3 py-2 font-mono font-medium align-top">Raw Record</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {pageFlagged.map((row) => (
                     <tr key={row.rowIndex} className="hover:bg-slate-50/70 align-top">
-                      <td className="px-3 py-2.5 font-mono tabular-nums text-red-700 font-semibold whitespace-nowrap">
+                      <td className="px-3 py-1.5 font-mono tabular-nums text-red-700 font-semibold whitespace-nowrap align-top">
                         #{row.rowIndex}
                       </td>
-                      <td className="px-3 py-2.5 space-y-1 text-red-900">
+                      <td className="px-3 py-1.5 space-y-1 text-red-900 align-top">
                         {row.issues.map((issue, i) => (
                           <div key={i} className="flex items-start gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" aria-hidden="true" />
@@ -238,7 +238,7 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
                           </div>
                         ))}
                       </td>
-                      <td className="px-3 py-2.5 font-mono text-[11px] text-slate-600">
+                      <td className="px-3 py-1.5 font-mono text-[11px] text-slate-600 align-top break-words">
                         {Object.entries(row.rawRow)
                           .map(([k, v]) => `${k}=${v || '∅'}`)
                           .join(' | ')}
@@ -250,39 +250,39 @@ export function DataQualityView({ analysis, onNavigate }: DataQualityViewProps) 
             </div>
           )
         ) : filteredValid.length === 0 ? (
-          <div className="py-10 text-center text-sm text-slate-600">
+          <div className="py-6 text-center text-sm text-slate-600">
             No validated readings match your filter.
           </div>
         ) : (
-          <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-[420px]">
+          <div className="overflow-x-auto border border-slate-200 rounded-lg">
             <table className="w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600">
-                <tr>
-                  <th scope="col" className="px-3 py-2.5 font-mono font-medium">Row</th>
-                  <th scope="col" className="px-3 py-2.5 font-medium">Location</th>
-                  <th scope="col" className="px-3 py-2.5 font-medium">Pollutant</th>
-                  <th scope="col" className="px-3 py-2.5 font-mono font-medium">Timestamp</th>
-                  <th scope="col" className="px-3 py-2.5 font-mono font-medium text-right">Value</th>
-                  <th scope="col" className="px-3 py-2.5 font-mono font-medium">Unit</th>
-                  <th scope="col" className="px-3 py-2.5 font-medium">Audit Note</th>
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                  <th scope="col" className="px-3 py-2 font-mono font-medium align-top">Row</th>
+                  <th scope="col" className="px-3 py-2 font-medium align-top">Location</th>
+                  <th scope="col" className="px-3 py-2 font-medium align-top">Pollutant</th>
+                  <th scope="col" className="px-3 py-2 font-mono font-medium align-top">Timestamp</th>
+                  <th scope="col" className="px-3 py-2 font-mono font-medium text-right align-top">Value</th>
+                  <th scope="col" className="px-3 py-2 font-mono font-medium align-top">Unit</th>
+                  <th scope="col" className="px-3 py-2 font-medium align-top">Audit Note</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {pageValid.map((r) => (
-                  <tr key={r.rowIndex} className="hover:bg-slate-50/70">
-                    <td className="px-3 py-2 font-mono tabular-nums text-slate-500">
+                  <tr key={r.rowIndex} className="hover:bg-slate-50/70 align-top">
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-slate-500 align-top">
                       #{r.rowIndex}
                     </td>
-                    <td className="px-3 py-2 text-slate-900 font-medium">{r.location}</td>
-                    <td className="px-3 py-2 font-mono text-slate-800">{r.pollutant}</td>
-                    <td className="px-3 py-2 font-mono tabular-nums text-slate-600 whitespace-nowrap">
+                    <td className="px-3 py-1.5 text-slate-900 font-medium align-top">{r.location}</td>
+                    <td className="px-3 py-1.5 font-mono text-slate-800 align-top">{r.pollutant}</td>
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-slate-600 whitespace-nowrap align-top">
                       {r.timestampRaw}
                     </td>
-                    <td className="px-3 py-2 font-mono tabular-nums text-right font-semibold text-slate-900">
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-right font-semibold text-slate-900 align-top">
                       {r.value}
                     </td>
-                    <td className="px-3 py-2 font-mono text-slate-600">{r.normalizedUnit}</td>
-                    <td className="px-3 py-2 text-[11px]">
+                    <td className="px-3 py-1.5 font-mono text-slate-600 align-top">{r.normalizedUnit}</td>
+                    <td className="px-3 py-1.5 text-[11px] align-top">
                       {r.warnings.length > 0 ? (
                         <span className="text-amber-800">{r.warnings.join(' ')}</span>
                       ) : (

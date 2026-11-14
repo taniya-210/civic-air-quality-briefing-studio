@@ -9,13 +9,19 @@ import { OverviewView } from './components/OverviewView';
 import { Sidebar } from './components/Sidebar';
 import { UploadDataView } from './components/UploadDataView';
 import { validateAndAnalyzeTable } from './lib/airQualityEngine';
+import { ApiRequestError, readApiJson } from './lib/apiClient';
 import { inferColumnMapping, parseTabularText } from './lib/csvParser';
+import {
+  buildDemoFallbackBriefingPack,
+  sanitizeDebugError,
+} from './lib/demoBriefingFallback';
 import { SAMPLE_DATASETS } from './lib/sampleDatasets';
 import type {
   AnalysisResult,
   BriefingLanguage,
   ColumnMapping,
   DashboardView,
+  FallbackDebugError,
   GeneratedBriefingPack,
   RawParsedTable,
   ReadingLevel,
@@ -43,6 +49,9 @@ export default function App() {
 
   // Briefings keyed by `${analysis.id}|${lang}|${level}` so language/level switches never mix stale outputs
   const [briefingCache, setBriefingCache] = useState<Record<string, GeneratedBriefingPack>>({});
+  const [fallbackErrorByAnalysis, setFallbackErrorByAnalysis] = useState<
+    Record<string, FallbackDebugError>
+  >({});
   const [language, setLanguage] = useState<BriefingLanguage>('en');
   const [readingLevel, setReadingLevel] = useState<ReadingLevel>('detailed');
   const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
@@ -52,17 +61,18 @@ export default function App() {
   const loadSavedPeriods = useCallback(async () => {
     try {
       const res = await fetch('/api/periods');
-      const data = await res.json();
-      if (!res.ok) {
-        setPeriodsError(data.error || 'Failed to load saved reporting periods.');
-        return;
-      }
+      const data = await readApiJson<{ periods?: SavedPeriodRecord[] }>(
+        res,
+        'Failed to load saved reporting periods.'
+      );
       setPeriodsError(null);
       if (Array.isArray(data.periods)) {
         setSavedPeriods(data.periods);
       }
-    } catch {
-      setPeriodsError('Could not reach backend period archive.');
+    } catch (err) {
+      setPeriodsError(
+        err instanceof Error ? err.message : 'Could not reach backend period archive.'
+      );
     }
   }, []);
 
@@ -99,12 +109,53 @@ export default function App() {
     : '';
   const activeBriefing = activeBriefingKey ? briefingCache[activeBriefingKey] ?? null : null;
 
+  const ensureLocalFallbackIfActive = useCallback(
+    (targetLang: BriefingLanguage, targetLevel: ReadingLevel) => {
+      if (!analysis || analysis.qualityReport.validRows <= 0) return;
+      const activeFallbackErr = fallbackErrorByAnalysis[analysis.id];
+      if (!activeFallbackErr) return;
+
+      const nextKey = `${analysis.id}|${targetLang}|${targetLevel}`;
+      setBriefingCache((prev) => {
+        const existing = prev[nextKey];
+        if (existing && existing.source === 'gemini') {
+          return prev;
+        }
+        return {
+          ...prev,
+          [nextKey]: buildDemoFallbackBriefingPack(
+            analysis,
+            targetLang,
+            targetLevel,
+            activeFallbackErr
+          ),
+        };
+      });
+    },
+    [analysis, fallbackErrorByAnalysis]
+  );
+
+  const handleChangeLanguage = (nextLang: BriefingLanguage) => {
+    setLanguage(nextLang);
+    ensureLocalFallbackIfActive(nextLang, readingLevel);
+  };
+
+  const handleChangeReadingLevel = (nextLevel: ReadingLevel) => {
+    setReadingLevel(nextLevel);
+    ensureLocalFallbackIfActive(language, nextLevel);
+  };
+
   const handleGenerateBriefing = async (
     targetLang: BriefingLanguage,
     targetLevel: ReadingLevel,
     forceRefresh = true
   ) => {
     if (!analysis) return;
+    if (analysis.qualityReport.validRows <= 0) {
+      setBriefingError('Cannot generate briefings because the dataset contains 0 valid readings.');
+      return;
+    }
+
     const key = `${analysis.id}|${targetLang}|${targetLevel}`;
     if (!forceRefresh && briefingCache[key]) return;
     if (inFlightKeyRef.current === key) return;
@@ -122,18 +173,71 @@ export default function App() {
           readingLevel: targetLevel,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate AI briefing.');
+      const data = await readApiJson<{
+        briefingPack: GeneratedBriefingPack;
+        liveAiError?: FallbackDebugError;
+      }>(res, 'Failed to generate AI briefing.');
+
+      const pack = data.briefingPack;
+      if (pack.source === 'gemini') {
+        setFallbackErrorByAnalysis((prev) => {
+          const next = { ...prev };
+          delete next[analysis.id];
+          return next;
+        });
+        setBriefingCache((prev) => {
+          const cleaned: Record<string, GeneratedBriefingPack> = {};
+          for (const [cacheKey, cachedPack] of Object.entries(prev)) {
+            if (!cacheKey.startsWith(`${analysis.id}|`) || cachedPack.source === 'gemini') {
+              cleaned[cacheKey] = cachedPack;
+            }
+          }
+          cleaned[key] = pack;
+          return cleaned;
+        });
+      } else {
+        const debugErr = sanitizeDebugError(pack.fallbackDebugError ?? data.liveAiError);
+        setFallbackErrorByAnalysis((prev) => ({
+          ...prev,
+          [analysis.id]: debugErr,
+        }));
+        setBriefingCache((prev) => ({
+          ...prev,
+          [key]: pack,
+        }));
       }
+    } catch (err) {
+      // Never convert validation errors (400 / zero valid rows) into fallback briefings
+      if (
+        err instanceof ApiRequestError &&
+        (err.statusCode === 400 ||
+          err.code === 'INVALID_ANALYSIS_PAYLOAD' ||
+          err.code === 'ZERO_VALID_READINGS' ||
+          err.code === 'INVALID_JSON')
+      ) {
+        setBriefingError(err.message);
+        return;
+      }
+
+      const debugErr = sanitizeDebugError({
+        code: err instanceof ApiRequestError ? err.code : 'NETWORK_OR_PROVIDER_ERROR',
+        statusCode: err instanceof ApiRequestError ? err.statusCode : undefined,
+        message: err instanceof Error ? err.message : 'Unable to reach Gemini briefing service.',
+      });
+      const fallbackPack = buildDemoFallbackBriefingPack(
+        analysis,
+        targetLang,
+        targetLevel,
+        debugErr
+      );
+      setFallbackErrorByAnalysis((prev) => ({
+        ...prev,
+        [analysis.id]: debugErr,
+      }));
       setBriefingCache((prev) => ({
         ...prev,
-        [key]: data.briefingPack as GeneratedBriefingPack,
+        [key]: fallbackPack,
       }));
-    } catch (err) {
-      setBriefingError(
-        err instanceof Error ? err.message : 'Unable to reach Gemini briefing service.'
-      );
     } finally {
       if (inFlightKeyRef.current === key) {
         inFlightKeyRef.current = null;
@@ -158,10 +262,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(record),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to save reporting period.');
-      }
+      const data = await readApiJson<{ periods?: SavedPeriodRecord[] }>(
+        res,
+        'Failed to save reporting period.'
+      );
       if (Array.isArray(data.periods)) {
         setSavedPeriods(data.periods);
       }
@@ -175,10 +279,10 @@ export default function App() {
     const res = await fetch(`/api/periods/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to delete saved period.');
-    }
+    const data = await readApiJson<{ periods?: SavedPeriodRecord[] }>(
+      res,
+      'Failed to delete saved period.'
+    );
     setPeriodsError(null);
     if (Array.isArray(data.periods)) {
       setSavedPeriods(data.periods);
@@ -204,7 +308,7 @@ export default function App() {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Top Bar Contract: Breadcrumb + Contextual Meta + 1 Primary Action */}
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-5 sm:px-8 py-3.5 flex items-center justify-between gap-8">
+        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4 sm:gap-8">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -243,7 +347,7 @@ export default function App() {
           </div>
         </header>
 
-        <main id="main-content" tabIndex={-1} className="flex-1 w-full max-w-[1260px] mx-auto px-5 sm:px-8 py-6 focus:outline-none">
+        <main id="main-content" tabIndex={-1} className="flex-1 w-full max-w-[1260px] mx-auto px-4 sm:px-6 py-4 focus:outline-none">
           {activeView === 'overview' && (
             <OverviewView
               analysis={analysis}
@@ -273,8 +377,8 @@ export default function App() {
               readingLevel={readingLevel}
               isGenerating={isGeneratingBriefing}
               error={briefingError}
-              onChangeLanguage={setLanguage}
-              onChangeReadingLevel={setReadingLevel}
+              onChangeLanguage={handleChangeLanguage}
+              onChangeReadingLevel={handleChangeReadingLevel}
               onGenerate={handleGenerateBriefing}
               onNavigate={setActiveView}
             />
@@ -288,8 +392,8 @@ export default function App() {
               readingLevel={readingLevel}
               isGenerating={isGeneratingBriefing}
               error={briefingError}
-              onChangeLanguage={setLanguage}
-              onChangeReadingLevel={setReadingLevel}
+              onChangeLanguage={handleChangeLanguage}
+              onChangeReadingLevel={handleChangeReadingLevel}
               onGenerate={handleGenerateBriefing}
               onNavigate={setActiveView}
             />

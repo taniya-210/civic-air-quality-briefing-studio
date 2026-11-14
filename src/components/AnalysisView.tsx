@@ -60,7 +60,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
 
   if (!analysis || !activeSummary) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 text-center space-y-2.5">
         <div className="font-display text-base font-semibold text-slate-900">
           No Validated Data to Analyze
         </div>
@@ -88,9 +88,9 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
   const pagedReadings = traceableReadings.slice(startIdx, startIdx + READINGS_PER_PAGE);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Pollutant Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div
           role="tablist"
           aria-label="Analyzed pollutants"
@@ -157,24 +157,24 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
       )}
 
       {/* Deterministic Statistics Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 items-start">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-[11px] text-slate-500">Observed Mean</div>
-          <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
+          <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-0.5">
             {activeSummary.mean}
           </div>
           <div className="text-[11px] text-slate-500">{activeSummary.primaryUnit}</div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-[11px] text-slate-500">Median</div>
-          <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
+          <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-0.5">
             {activeSummary.median}
           </div>
           <div className="text-[11px] text-slate-500">{activeSummary.primaryUnit}</div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-[11px] text-slate-500">90th Pct</div>
-          <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
+          <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-0.5">
             {activeSummary.p90}
           </div>
           <div className="text-[11px] text-slate-500">{activeSummary.primaryUnit}</div>
@@ -188,11 +188,11 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
               document.getElementById('source-readings-table')?.scrollIntoView({ behavior: 'smooth' });
             }
           }}
-          className="text-left bg-white border border-slate-200 hover:border-amber-600 rounded-xl p-4 transition-colors focus-visible:outline-2 focus-visible:outline-teal-700"
+          className="text-left bg-white border border-slate-200 hover:border-amber-600 rounded-xl p-3 transition-colors focus-visible:outline-2 focus-visible:outline-teal-700"
           title="Click to trace observed peak to source row"
         >
           <div className="text-[11px] text-slate-500">Observed Peak (Traceable)</div>
-          <div className="font-mono tabular-nums text-lg font-bold text-amber-800 mt-1">
+          <div className="font-mono tabular-nums text-lg font-bold text-amber-800 mt-0.5">
             {activeSummary.max}
           </div>
           <div
@@ -208,14 +208,14 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
               : activeSummary.primaryUnit}
           </div>
         </button>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-[11px] text-slate-500">Min / Std Dev</div>
-          <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-1">
+          <div className="font-mono tabular-nums text-lg font-bold text-slate-900 mt-0.5">
             {activeSummary.min} / {activeSummary.stdDev}
           </div>
           <div className="text-[11px] text-slate-500">n={activeSummary.totalCount}</div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-[11px] text-slate-500">
             {activeSummary.thresholdUsed
               ? `${activeSummary.thresholdUsed.averagingHours}h Standard`
@@ -224,7 +224,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           {hasValidRegulatoryWindows ? (
             <>
               <div
-                className={`font-mono tabular-nums text-lg font-bold mt-1 ${
+                className={`font-mono tabular-nums text-lg font-bold mt-0.5 ${
                   (activeSummary.regulatoryWindowExceedanceCount ?? 0) > 0
                     ? 'text-red-700'
                     : 'text-emerald-700'
@@ -237,14 +237,14 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
             </>
           ) : (
             <>
-              <div className="text-xs font-semibold text-amber-800 mt-1.5">Preliminary</div>
+              <div className="text-xs font-semibold text-amber-800 mt-1">Preliminary</div>
               <div className="text-[11px] text-slate-500">No 24h avg possible</div>
             </>
           )}
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4 col-span-2 sm:col-span-1">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 col-span-2 sm:col-span-1">
           <div className="text-[11px] text-slate-500">Measured Trend</div>
-          <div className="flex items-center gap-1 mt-1 text-sm font-bold text-slate-900">
+          <div className="flex items-center gap-1 mt-0.5 text-sm font-bold text-slate-900">
             {trend.direction === 'rising' && (
               <>
                 <ArrowUpRight className="w-4 h-4 text-red-700 shrink-0" />
@@ -277,7 +277,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
 
       {/* Verified Multi-Hour Regulatory Window Table (only rendered when sufficient hourly density exists) */}
       {activeSummary.validWindowAverages.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2.5">
           <div>
             <h2 className="font-display text-base font-semibold text-slate-900">
               Verified {activeSummary.thresholdUsed?.averagingHours}-Hour Window Averages
@@ -291,33 +291,33 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                  <th className="px-3 py-2 font-medium">Station</th>
-                  <th className="px-3 py-2 font-mono font-medium">Window</th>
-                  <th className="px-3 py-2 font-mono font-medium text-right">Readings / Span</th>
-                  <th className="px-3 py-2 font-mono font-medium text-right">
+                  <th className="px-3 py-2 font-medium align-top">Station</th>
+                  <th className="px-3 py-2 font-mono font-medium align-top">Window</th>
+                  <th className="px-3 py-2 font-mono font-medium text-right align-top">Readings / Span</th>
+                  <th className="px-3 py-2 font-mono font-medium text-right align-top">
                     Calculated {activeSummary.thresholdUsed?.averagingHours}h Avg
                   </th>
-                  <th className="px-3 py-2 font-mono font-medium text-right">Standard</th>
-                  <th className="px-3 py-2 font-medium">Result</th>
+                  <th className="px-3 py-2 font-mono font-medium text-right align-top">Standard</th>
+                  <th className="px-3 py-2 font-medium align-top">Result</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {activeSummary.validWindowAverages.map((w, idx) => (
                   <tr key={idx}>
-                    <td className="px-3 py-2 font-medium text-slate-900">{w.location}</td>
-                    <td className="px-3 py-2 font-mono tabular-nums text-slate-700">
+                    <td className="px-3 py-1.5 font-medium text-slate-900 align-top">{w.location}</td>
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-slate-700 align-top">
                       {w.windowLabel}
                     </td>
-                    <td className="px-3 py-2 font-mono tabular-nums text-right text-slate-600">
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-right text-slate-600 align-top">
                       {w.readingCount} pts / {w.spanHours}h
                     </td>
-                    <td className="px-3 py-2 font-mono tabular-nums text-right font-semibold text-slate-900">
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-right font-semibold text-slate-900 align-top">
                       {w.calculatedAverage} {w.unit}
                     </td>
-                    <td className="px-3 py-2 font-mono tabular-nums text-right text-slate-600">
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-right text-slate-600 align-top">
                       {w.standardValue} {w.unit}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1.5 align-top">
                       {w.exceedsStandard ? (
                         <span className="text-red-700 font-semibold">Exceeds {w.averagingHours}h standard</span>
                       ) : (
@@ -333,8 +333,8 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
       )}
 
       {/* Charts */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        <div className="xl:col-span-7 bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+        <div className="xl:col-span-7 bg-white border border-slate-200 rounded-xl p-4 space-y-3">
           <div>
             <h2 className="font-display text-base font-semibold text-slate-900">
               {activeSummary.pollutant} Observed Time-Series Trajectory
@@ -352,7 +352,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           />
         </div>
 
-        <div className="xl:col-span-5 bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div className="xl:col-span-5 bg-white border border-slate-200 rounded-xl p-4 space-y-3">
           <div>
             <h2 className="font-display text-base font-semibold text-slate-900">
               Location Comparison (Observed Means &amp; Peaks)
@@ -371,13 +371,13 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
       </div>
 
       {/* Station Breakdown Table */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
         <div>
           <h2 className="font-display text-base font-semibold text-slate-900">
             Station-by-Station Statistics ({activeSummary.pollutant})
           </h2>
           <p className="text-xs text-slate-500">
-            Click any location row to filter the traceable source readings table below.
+            Click any station name to filter the traceable source readings table below.
           </p>
         </div>
 
@@ -385,24 +385,24 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                <th className="px-3 py-2.5 font-medium">Location</th>
-                <th className="px-3 py-2.5 font-mono font-medium text-right">Samples / Span</th>
-                <th className="px-3 py-2.5 font-mono font-medium text-right">Observed Mean</th>
-                <th className="px-3 py-2.5 font-mono font-medium text-right">Median</th>
-                <th className="px-3 py-2.5 font-mono font-medium text-right">Observed Peak</th>
-                <th className="px-3 py-2.5 font-medium">Averaging / Standard Check</th>
-                <th className="px-3 py-2.5 font-medium">Local Trend</th>
+                <th className="px-3 py-2 font-medium align-top">Location</th>
+                <th className="px-3 py-2 font-mono font-medium text-right align-top">Samples / Span</th>
+                <th className="px-3 py-2 font-mono font-medium text-right align-top">Observed Mean</th>
+                <th className="px-3 py-2 font-mono font-medium text-right align-top">Median</th>
+                <th className="px-3 py-2 font-mono font-medium text-right align-top">Observed Peak</th>
+                <th className="px-3 py-2 font-medium align-top">Averaging / Standard Check</th>
+                <th className="px-3 py-2 font-medium align-top">Local Trend</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {activeSummary.locationStats.map((st) => (
                 <tr
                   key={st.location}
-                  className={`transition-colors ${
+                  className={`transition-colors align-top ${
                     stationFilter === st.location ? 'bg-teal-50/70' : 'hover:bg-slate-50'
                   }`}
                 >
-                  <td className="px-3 py-2.5 font-medium text-slate-900">
+                  <td className="px-3 py-2 font-medium text-slate-900 align-top">
                     <button
                       type="button"
                       aria-pressed={stationFilter === st.location}
@@ -419,19 +419,19 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 font-mono tabular-nums text-right text-slate-700">
+                  <td className="px-3 py-2 font-mono tabular-nums text-right text-slate-700 align-top">
                     {st.count} pts / {st.spanHours}h
                   </td>
-                  <td className="px-3 py-2.5 font-mono tabular-nums text-right font-semibold text-slate-900">
+                  <td className="px-3 py-2 font-mono tabular-nums text-right font-semibold text-slate-900 align-top">
                     {st.mean} {st.unit}
                   </td>
-                  <td className="px-3 py-2.5 font-mono tabular-nums text-right text-slate-700">
+                  <td className="px-3 py-2 font-mono tabular-nums text-right text-slate-700 align-top">
                     {st.median}
                   </td>
-                  <td className="px-3 py-2.5 font-mono tabular-nums text-right text-amber-900 font-medium">
+                  <td className="px-3 py-2 font-mono tabular-nums text-right text-amber-900 font-medium align-top">
                     {st.max} {st.unit} (#{st.observedPeak.rowIndex})
                   </td>
-                  <td className="px-3 py-2.5 text-slate-700">
+                  <td className="px-3 py-2 text-slate-700 align-top">
                     {st.validWindowAverages.length > 0 ? (
                       <span
                         className={
@@ -450,7 +450,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-slate-700">
+                  <td className="px-3 py-2 text-slate-700 align-top">
                     {st.trend.direction === 'insufficient_data'
                       ? 'Insufficient data'
                       : `${st.trend.direction} (${
@@ -465,7 +465,7 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
       </div>
 
       {/* Traceable Source Readings */}
-      <div id="source-readings-table" className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+      <div id="source-readings-table" className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-display text-base font-semibold text-slate-900">
@@ -540,35 +540,35 @@ export function AnalysisView({ analysis, onNavigate }: AnalysisViewProps) {
           </div>
         </div>
 
-        <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-[340px]">
+        <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full text-left border-collapse text-xs">
-            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600">
-              <tr>
-                <th scope="col" className="px-3 py-2 font-mono font-medium">Row #</th>
-                <th scope="col" className="px-3 py-2 font-medium">Location</th>
-                <th scope="col" className="px-3 py-2 font-mono font-medium">Timestamp</th>
-                <th scope="col" className="px-3 py-2 font-mono font-medium text-right">Measured Value</th>
-                <th scope="col" className="px-3 py-2 font-mono font-medium">Unit</th>
-                <th scope="col" className="px-3 py-2 font-medium">Status</th>
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                <th scope="col" className="px-3 py-2 font-mono font-medium align-top">Row #</th>
+                <th scope="col" className="px-3 py-2 font-medium align-top">Location</th>
+                <th scope="col" className="px-3 py-2 font-mono font-medium align-top">Timestamp</th>
+                <th scope="col" className="px-3 py-2 font-mono font-medium text-right align-top">Measured Value</th>
+                <th scope="col" className="px-3 py-2 font-mono font-medium align-top">Unit</th>
+                <th scope="col" className="px-3 py-2 font-medium align-top">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pagedReadings.map((r) => {
                 const isPeak = activeSummary.observedPeak?.rowIndex === r.rowIndex;
                 return (
-                  <tr key={r.rowIndex} className="hover:bg-slate-50/70">
-                    <td className="px-3 py-2 font-mono tabular-nums text-slate-500">
+                  <tr key={r.rowIndex} className="hover:bg-slate-50/70 align-top">
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-slate-500 align-top">
                       #{r.rowIndex}
                     </td>
-                    <td className="px-3 py-2 font-medium text-slate-900">{r.location}</td>
-                    <td className="px-3 py-2 font-mono tabular-nums text-slate-600">
+                    <td className="px-3 py-1.5 font-medium text-slate-900 align-top">{r.location}</td>
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-slate-600 align-top">
                       {r.timestampRaw}
                     </td>
-                    <td className="px-3 py-2 font-mono tabular-nums text-right font-semibold text-slate-900">
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-right font-semibold text-slate-900 align-top">
                       {r.value}
                     </td>
-                    <td className="px-3 py-2 font-mono text-slate-600">{r.normalizedUnit}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1.5 font-mono text-slate-600 align-top">{r.normalizedUnit}</td>
+                    <td className="px-3 py-1.5 align-top">
                       {r.warnings.length > 0 ? (
                         <span className="text-amber-800">Unit mismatch (excluded)</span>
                       ) : isPeak ? (

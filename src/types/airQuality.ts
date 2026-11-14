@@ -295,7 +295,18 @@ export interface VulnerableGroupAdvisories {
   sensitiveIndividuals: VulnerableGroupItem;
 }
 
+export type BriefingSource = 'gemini' | 'demo_template';
+
+export interface FallbackDebugError {
+  code: string;
+  message: string;
+  statusCode?: number;
+}
+
 export interface GeneratedBriefingPack {
+  source: BriefingSource;
+  fallbackNotice?: string;
+  fallbackDebugError?: FallbackDebugError;
   language: BriefingLanguage;
   readingLevel: ReadingLevel;
   generatedAtIso: string;

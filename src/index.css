@@ -20,6 +20,11 @@
   .font-mono, code, pre {
     font-family: var(--font-mono);
   }
+
+  table th,
+  table td {
+    vertical-align: top;
+  }
 }
 
 .tabular-nums {

@@ -1,14 +1,62 @@
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { buildDemoFallbackBriefingPack, sanitizeDebugError } from '../src/lib/demoBriefingFallback';
 import type {
   AnalysisResult,
   BriefingLanguage,
   ComparativeBriefingResponse,
+  FallbackDebugError,
   GeneratedBriefingPack,
   PeriodComparisonResult,
   ReadingLevel,
 } from '../src/types/airQuality';
 
 const MODEL_NAME = 'gemini-4-hydrogen';
+
+function isHtmlLikeBody(body: string): boolean {
+  const trimmed = body.trimStart().toLowerCase();
+  return (
+    trimmed.startsWith('<!doctype') ||
+    trimmed.startsWith('<html') ||
+    trimmed.startsWith('<head') ||
+    trimmed.startsWith('<body') ||
+    (trimmed.startsWith('<') && (trimmed.includes('</html>') || trimmed.includes('</title>')))
+  );
+}
+
+export async function verifyJsonUpstreamResponse(response: globalThis.Response): Promise<globalThis.Response> {
+  const status = response.status;
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const bodyText = await response.text();
+  const trimmed = bodyText.trim();
+
+  if (isHtmlLikeBody(trimmed) || (contentType.includes('text/html') && trimmed.startsWith('<'))) {
+    const err = new Error(
+      `Gemini API upstream returned an HTML page (HTTP ${status || 502}) instead of JSON. Please verify the API endpoint/model configuration or retry shortly.`
+    ) as Error & { statusCode?: number; code?: string };
+    err.statusCode = status >= 400 && status < 600 ? status : 502;
+    err.code = 'UPSTREAM_HTML_RESPONSE';
+    throw err;
+  }
+
+  if (response.ok && !contentType.includes('application/json') && trimmed.length > 0) {
+    try {
+      JSON.parse(trimmed);
+    } catch {
+      const err = new Error(
+        `Gemini API returned an unexpected non-JSON response (HTTP ${status}, content-type: ${contentType || 'unknown'}).`
+      ) as Error & { statusCode?: number; code?: string };
+      err.statusCode = 502;
+      err.code = 'INVALID_AI_RESPONSE';
+      throw err;
+    }
+  }
+
+  return new Response(bodyText, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
 
 function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -21,12 +69,18 @@ function getGeminiClient(): GoogleGenAI {
     throw err;
   }
 
+  const guardedFetch: typeof globalThis.fetch = async (input, init) => {
+    const response = await globalThis.fetch(input, init);
+    return verifyJsonUpstreamResponse(response);
+  };
+
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
       },
+      fetch: guardedFetch,
     },
   });
 }
@@ -149,6 +203,21 @@ export function mapGeminiError(error: unknown): { statusCode: number; code: stri
   if (errObj?.code === 'MISSING_API_KEY') {
     return { statusCode: 503, code: 'MISSING_API_KEY', message: rawMsg };
   }
+  if (errObj?.code === 'UPSTREAM_HTML_RESPONSE') {
+    return {
+      statusCode: status >= 400 && status < 600 ? status : 502,
+      code: 'UPSTREAM_HTML_RESPONSE',
+      message: rawMsg,
+    };
+  }
+  if (isHtmlLikeBody(rawMsg) || rawMsg.includes("Unexpected token '<'")) {
+    return {
+      statusCode: 502,
+      code: 'UPSTREAM_HTML_RESPONSE',
+      message:
+        'Gemini API returned an HTML response instead of JSON. Please verify the endpoint and model configuration or retry.',
+    };
+  }
   if (errObj?.code === 'INVALID_AI_RESPONSE') {
     return { statusCode: 502, code: 'INVALID_AI_RESPONSE', message: rawMsg };
   }
@@ -191,7 +260,7 @@ export function mapGeminiError(error: unknown): { statusCode: number; code: stri
   };
 }
 
-function parseStructuredAiJson<T>(rawText: string | undefined, contextLabel: string): T {
+export function parseStructuredAiJson<T>(rawText: string | undefined, contextLabel: string): T {
   const trimmed = (rawText ?? '').trim();
   if (!trimmed) {
     const err = new Error(
@@ -199,6 +268,14 @@ function parseStructuredAiJson<T>(rawText: string | undefined, contextLabel: str
     ) as Error & { statusCode?: number; code?: string };
     err.statusCode = 502;
     err.code = 'INVALID_AI_RESPONSE';
+    throw err;
+  }
+  if (isHtmlLikeBody(trimmed)) {
+    const err = new Error(
+      `Gemini returned an HTML page instead of JSON for ${contextLabel}. Please verify service availability and retry.`
+    ) as Error & { statusCode?: number; code?: string };
+    err.statusCode = 502;
+    err.code = 'UPSTREAM_HTML_RESPONSE';
     throw err;
   }
   try {
@@ -220,7 +297,11 @@ function isTransientCapacityError(error: unknown): boolean {
   return status === 503 || msg.includes('unavailable') || msg.includes('high demand');
 }
 
-async function withTransientRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+export async function withTransientRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 2,
+  baseDelayMs = 800
+): Promise<T> {
   let attempt = 0;
   while (true) {
     try {
@@ -229,7 +310,7 @@ async function withTransientRetry<T>(fn: () => Promise<T>, maxRetries = 2): Prom
       if (attempt >= maxRetries || !isTransientCapacityError(error)) {
         throw error;
       }
-      const delayMs = 800 * Math.pow(2, attempt);
+      const delayMs = baseDelayMs * Math.pow(2, attempt);
       attempt++;
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
@@ -428,6 +509,7 @@ export async function generateBriefingsWithGemini(
   }>(response.text, 'briefings');
 
   return {
+    source: 'gemini',
     language,
     readingLevel,
     generatedAtIso: new Date().toISOString(),
@@ -443,6 +525,39 @@ export async function generateBriefingsWithGemini(
     schoolAdvisory: parsed.schoolAdvisory,
     vulnerableGroupAdvisories: parsed.vulnerableGroupAdvisories,
   };
+}
+
+export async function generateBriefingsWithFallback(
+  analysis: AnalysisResult,
+  language: BriefingLanguage,
+  readingLevel: ReadingLevel,
+  liveGenerator: (
+    analysis: AnalysisResult,
+    language: BriefingLanguage,
+    readingLevel: ReadingLevel
+  ) => Promise<GeneratedBriefingPack> = generateBriefingsWithGemini
+): Promise<{ briefingPack: GeneratedBriefingPack; liveAiError: FallbackDebugError | null }> {
+  try {
+    const livePack = await liveGenerator(analysis, language, readingLevel);
+    return {
+      briefingPack: {
+        ...livePack,
+        source: 'gemini',
+      },
+      liveAiError: null,
+    };
+  } catch (error) {
+    const mapped = mapGeminiError(error);
+    const debugError = sanitizeDebugError({
+      code: mapped.code,
+      message: mapped.message,
+      statusCode: mapped.statusCode,
+    });
+    return {
+      briefingPack: buildDemoFallbackBriefingPack(analysis, language, readingLevel, debugError),
+      liveAiError: debugError,
+    };
+  }
 }
 
 export async function generateComparisonBriefingWithGemini(
