@@ -1,0 +1,8 @@
+{
+  "name": "Civic Air Quality Briefing Studio",
+  "description": "Convert real air-quality monitoring data into validated analyses and evidence-grounded civic briefings for ward officers, housing societies, and schools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
